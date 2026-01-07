@@ -26,3 +26,8 @@ export interface Book {
   id: number;
   name: string;
 }
+
+export type RootDrawerParamList = {
+  Home: undefined; // No params expected
+  BookReader: { bookId: number; bookName: string; chapterNumber: number }; // Params expected
+};
