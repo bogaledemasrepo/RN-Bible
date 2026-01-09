@@ -38,8 +38,7 @@ const PageScreen = () => {
 
   const onGestureEvent = (event: any) => {
     const { translationX } = event.nativeEvent;
-
-    if (translationX > SWIPE_THRESHOLD && chapterNumber > 1) {
+    if (translationX > SWIPE_THRESHOLD && selectedChapter > 1) {
       navigateBack();
     } else if (translationX < -SWIPE_THRESHOLD) {
       navigateNext();
@@ -50,6 +49,7 @@ const PageScreen = () => {
       `SELECT MAX(chapter_number) as maxCh FROM chapters WHERE book_id = ?`,
       [id]
     );
+    console.log(result);
     setMaxChapter(result?.maxCh || 1);
   };
   async function fetchVerses(id: number, chapterNum: number) {
@@ -63,6 +63,7 @@ const PageScreen = () => {
     );
   }
   const navigateNext = async () => {
+    if (selectedChapter == maxChapter) return;
     setPreVerses(verses);
     setVerses(nextVerses);
     fetchVerses(bookId, selectedChapter + 1).then((verses) => {
@@ -84,12 +85,13 @@ const PageScreen = () => {
 
   useEffect(() => {
     getMaxChapter(bookId);
+    setSelectedChapter(chapterNumber);
     fetchVerses(bookId, selectedChapter).then((verses) => setVerses(verses));
     fetchVerses(bookId, selectedChapter + 1).then((verses) =>
       setNextVerses(verses)
     );
     flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, []);
+  }, [bookId]);
   const renderVerse = ({ item }: any) => (
     <View style={styles.verseContainer}>
       <Text style={styles.verseText}>
@@ -100,11 +102,9 @@ const PageScreen = () => {
     </View>
   );
 
-  return (<GestureHandlerRootView style={{ flex: 1 }}>
-      <PanGestureHandler
-        activeOffsetX={[-20, 20]}
-        onEnded={onGestureEvent}
-      >
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PanGestureHandler activeOffsetX={[-20, 20]} onEnded={onGestureEvent}>
         <SafeAreaView style={styles.container}>
           <Animated.FlatList
             ref={flatListRef}
@@ -134,20 +134,20 @@ const PageScreen = () => {
                 <TouchableOpacity
                   style={[
                     styles.navBtn,
-                    chapterNumber <= 1 && styles.disabledBtn,
+                    selectedChapter == 1 && styles.disabledBtn,
                   ]}
                   onPress={navigateBack}
-                  disabled={chapterNumber <= 1}
+                  disabled={selectedChapter <= 1}
                 >
                   <Ionicons
                     name="arrow-back"
                     size={20}
-                    color={chapterNumber <= 1 ? "#cbd5e1" : "#6366f1"}
+                    color={selectedChapter == 1 ? "#cbd5e1" : "#6366f1"}
                   />
                   <Text
                     style={[
                       styles.navBtnText,
-                      selectedChapter <= 1 && styles.disabledBtnText,
+                      selectedChapter == 1 && styles.disabledBtnText,
                     ]}
                   >
                     የቀደመው
@@ -157,24 +157,26 @@ const PageScreen = () => {
                 <TouchableOpacity
                   style={[
                     styles.navBtn,
-                    chapterNumber >= maxChapter && styles.disabledBtn,
+                    selectedChapter == maxChapter && styles.disabledBtn,
                   ]}
                   onPress={navigateNext}
-                  disabled={chapterNumber >= maxChapter}
+                  disabled={selectedChapter == maxChapter}
                 >
-                  <Ionicons
-                    name="arrow-forward"
-                    size={20}
-                    color={chapterNumber >= maxChapter ? "#cbd5e1" : "#6366f1"}
-                  />
                   <Text
                     style={[
                       styles.navBtnText,
-                      selectedChapter <= 1 && styles.disabledBtnText,
+                      selectedChapter == maxChapter && styles.disabledBtnText,
                     ]}
                   >
                     ቀጣይ
                   </Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={20}
+                    color={
+                      selectedChapter == maxChapter ? "#cbd5e1" : "#6366f1"
+                    }
+                  />
                 </TouchableOpacity>
               </View>
             }

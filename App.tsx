@@ -7,7 +7,6 @@ import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { NavigationContainer } from "@react-navigation/native";
 import { createDrawerNavigator } from "@react-navigation/drawer";
-import { PagesProvider } from "./context/use-pages-context";
 import { CustomDrawerContent } from "./components/custom-drawer-content";
 import PageScreen from "./screens/PageScreen";
 import { RootDrawerParamList } from "./types";
@@ -87,7 +86,6 @@ export default function App() {
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <SQLiteProvider databaseName="bible.db" useSuspense>
-        <PagesProvider>
           <NavigationContainer>
             <Drawer.Navigator
               drawerContent={(props) => <CustomDrawerContent {...props} />}
@@ -109,7 +107,6 @@ export default function App() {
               />
             </Drawer.Navigator>
           </NavigationContainer>
-        </PagesProvider>
       </SQLiteProvider>
     </View>
   );

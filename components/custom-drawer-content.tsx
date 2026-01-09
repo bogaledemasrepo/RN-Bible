@@ -4,15 +4,12 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Dimensions,
 } from "react-native";
-import { DrawerContentScrollView, DrawerItem } from "@react-navigation/drawer";
+import { DrawerContentScrollView } from "@react-navigation/drawer";
 import { useSQLiteContext } from "expo-sqlite";
 import { Book } from "../types";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons"; // Assuming you have Expo icons
-
-const { width } = Dimensions.get("window");
 
 export function CustomDrawerContent(props: any) {
   const [navData, setNavData] = useState<Book[]>([]);
@@ -25,7 +22,6 @@ export function CustomDrawerContent(props: any) {
     db.getAllAsync("SELECT * FROM books").then((res) => {
       const fetchedBooks = res as Book[];
       setBooks(fetchedBooks);
-      // Initialize with Old Testament
       setNavData(fetchedBooks.filter((item) => item.testament === "old"));
     });
   }, []);
@@ -39,13 +35,10 @@ export function CustomDrawerContent(props: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Section */}
       <View style={styles.brandSection}>
         <Ionicons name="book" size={32} color="#6366f1" />
         <Text style={styles.brandText}>መጽሐፍ ቅዱስ</Text>
       </View>
-
-      {/* Modern Segmented Control */}
       <View style={styles.segmentedControlWrapper}>
         <View style={styles.segmentedControl}>
           <TouchableOpacity
@@ -83,12 +76,8 @@ export function CustomDrawerContent(props: any) {
       >
         <View style={styles.listContainer}>
           {navData.map((book,index) => {
-            // Check if this book is currently selected
-            const isSelected =
-              state.routes[state.index].params?.bookId === book.book_id;
-
+            const isSelected = state.routes[state.index].params?.bookId === book.book_id;
             return (
-              // Inside your navData.map(...)
               <TouchableOpacity
                 key={book.book_id}
                 style={[styles.bookItem, isSelected && styles.bookItemActive]}
@@ -105,8 +94,6 @@ export function CustomDrawerContent(props: any) {
                     {index+1}. 
                   </Text>
                 </View>
-
-                {/* Added numberOfLines and ellipsizeMode here */}
                 <Text
                   style={[
                     styles.bookLabel,
