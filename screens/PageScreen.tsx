@@ -6,23 +6,27 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
-  Dimensions,
   Animated,
 } from "react-native";
+// 1. Import Gesture Handler components
+import {
+  GestureHandlerRootView,
+  PanGestureHandler,
+  State,
+} from "react-native-gesture-handler";
 import { useSQLiteContext } from "expo-sqlite";
 import { useRoute, useNavigation, RouteProp } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { RootDrawerParamList } from "../types";
-import { DatabaseDebugger } from "../components/debug-db";
 
+const SWIPE_THRESHOLD = 80; // Distance required to trigger page change
 
 const PageScreen = () => {
   const db = useSQLiteContext();
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<RootDrawerParamList, "BookReader">>();
 
-  // Safe Fallback for Params
   const { bookId, bookName, chapterNumber } = route.params || {
     bookId: 1,
     bookName: "ኦሪት ዘፍጥረት",
@@ -30,33 +34,63 @@ const PageScreen = () => {
   };
 
   const [verses, setVerses] = useState<any[]>([]);
+  const [preVerses, setPreVerses] = useState<any[]>([]);
+  const [selectedChapter, setSelectedChapter] = useState(1);
+  const [nextVerses, setNextVerses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const scrollY = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
 
-  useEffect(() => {
-    async function fetchVerses() {
-      setIsLoading(true);
-      try {
-        const result = await db.getAllAsync(
-          `SELECT v.verse_number, v.verse_text 
+  // 2. Gesture Logic
+  const onGestureEvent = (event: any) => {
+    const { translationX } = event.nativeEvent;
+
+    // Swipe Right (Previous Chapter)
+    if (translationX > SWIPE_THRESHOLD && chapterNumber > 1) {
+      navigation.setParams({ chapterNumber: chapterNumber - 1 });
+    }
+    // Swipe Left (Next Chapter)
+    else if (translationX < -SWIPE_THRESHOLD) {
+      navigation.setParams({ chapterNumber: chapterNumber + 1 });
+    }
+  };
+  async function fetchVerses(id: number, chapterNum: number) {
+    return await db.getAllAsync(
+      `SELECT v.verse_number, v.verse_text 
            FROM verses v
            JOIN chapters c ON v.chapter_id = c.chapter_id
            WHERE c.book_id = ? AND c.chapter_number = ?
            ORDER BY v.verse_number ASC`,
-          [bookId, chapterNumber]
-        );
-        setVerses(result);
-        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchVerses();
-  }, [bookId, chapterNumber]);
+      [id, chapterNum]
+    );
+  }
+  const navigateNext = async () => {
+    setPreVerses(verses);
+    setVerses(nextVerses);
+    fetchVerses(bookId, selectedChapter + 1).then((verses) => {
+      setSelectedChapter(selectedChapter + 1);
+      setNextVerses(verses);
+    });
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  };
+  const navigateBack = async () => {
+    if (selectedChapter == 1) return;
+    setNextVerses(verses);
+    setVerses(preVerses);
+    fetchVerses(bookId, selectedChapter - 1).then((verses) => {
+      setSelectedChapter(selectedChapter + 1);
+      setPreVerses(verses);
+    });
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  };
 
+  useEffect(() => {
+    fetchVerses(bookId, selectedChapter).then((verses) => setVerses(verses));
+    fetchVerses(bookId, selectedChapter + 1).then((verses) =>
+      setNextVerses(verses)
+    );
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, []);
   const renderVerse = ({ item }: any) => (
     <View style={styles.verseContainer}>
       <Text style={styles.verseText}>
@@ -67,75 +101,73 @@ const PageScreen = () => {
     </View>
   );
 
-  if (isLoading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="small" color="#6366f1" />
-      </View>
-    );
-  }
-
   return (
-    <SafeAreaView>
-      <DatabaseDebugger />
-      <Animated.FlatList
-        ref={flatListRef}
-        data={verses}
-        keyExtractor={(item: any) => item.verse_number.toString()}
-        renderItem={renderVerse}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
-        contentContainerStyle={styles.listContent}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <Text style={styles.mainTitle}>{bookName}</Text>
-            <Text style={styles.chapterSubtitle}>ምዕራፍ {chapterNumber}</Text>
-            <View style={styles.accentDots}>
-              <View style={styles.dot} />
-              <View style={[styles.dot, styles.dotLarge]} />
-              <View style={styles.dot} />
-            </View>
-          </View>
-        }
-        ListFooterComponent={
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={[styles.navBtn, chapterNumber <= 1 && styles.disabledBtn]}
-              onPress={() =>
-                navigation.setParams({ chapterNumber: chapterNumber - 1 })
-              }
-              disabled={chapterNumber <= 1}
-            >
-              <Ionicons
-                name="arrow-back"
-                size={20}
-                color={chapterNumber <= 1 ? "#cbd5e1" : "#6366f1"}
-              />
-              <Text
-                style={[
-                  styles.navBtnText,
-                  chapterNumber <= 1 && styles.disabledBtnText,
-                ]}
-              >
-                የቀደመው
-              </Text>
-            </TouchableOpacity>
+    // 3. Wrap everything in GestureHandlerRootView
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PanGestureHandler
+        activeOffsetX={[-20, 20]} // Prevents accidental swipes while scrolling vertically
+        onEnded={onGestureEvent}
+      >
+        <SafeAreaView style={styles.container}>
+          <Animated.FlatList
+            ref={flatListRef}
+            data={verses}
+            keyExtractor={(item: any) => item.verse_number.toString()}
+            renderItem={renderVerse}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: true }
+            )}
+            contentContainerStyle={styles.listContent}
+            ListHeaderComponent={
+              <View style={styles.header}>
+                <Text style={styles.mainTitle}>{bookName}</Text>
+                <Text style={styles.chapterSubtitle}>ምዕራፍ {chapterNumber}</Text>
+                <View style={styles.accentDots}>
+                  <View style={styles.dot} />
+                  <View style={[styles.dot, styles.dotLarge]} />
+                  <View style={styles.dot} />
+                </View>
+              </View>
+            }
+            ListFooterComponent={
+              <View style={styles.footer}>
+                <TouchableOpacity
+                  style={[
+                    styles.navBtn,
+                    chapterNumber <= 1 && styles.disabledBtn,
+                  ]}
+                  onPress={navigateBack}
+                  disabled={chapterNumber <= 1}
+                >
+                  <Ionicons
+                    name="arrow-back"
+                    size={20}
+                    color={chapterNumber <= 1 ? "#cbd5e1" : "#6366f1"}
+                  />
+                  <Text
+                    style={[
+                      styles.navBtnText,
+                      chapterNumber <= 1 && styles.disabledBtnText,
+                    ]}
+                  >
+                    የቀደመው
+                  </Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.navBtn}
-              onPress={() =>
-                navigation.setParams({ chapterNumber: chapterNumber + 1 })
-              }
-            >
-              <Text style={styles.navBtnText}>ቀጣይ</Text>
-              <Ionicons name="arrow-forward" size={20} color="#6366f1" />
-            </TouchableOpacity>
-          </View>
-        }
-      />
-    </SafeAreaView>
+                <TouchableOpacity
+                  style={styles.navBtn}
+                  onPress={navigateNext}
+                >
+                  <Text style={styles.navBtnText}>ቀጣይ</Text>
+                  <Ionicons name="arrow-forward" size={20} color="#6366f1" />
+                </TouchableOpacity>
+              </View>
+            }
+          />
+        </SafeAreaView>
+      </PanGestureHandler>
+    </GestureHandlerRootView>
   );
 };
 
@@ -179,10 +211,9 @@ const styles = StyleSheet.create({
   dotLarge: { width: 24, backgroundColor: "#6366f1" },
 
   // Verse Design
-  verseContainer: { marginBottom: 16 },
+  verseContainer: { marginBottom: 8 },
   verseText: {
     fontSize: 14,
-    lineHeight: 28,
     color: "#334155",
     textAlign: "left",
   },

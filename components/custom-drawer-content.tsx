@@ -42,7 +42,7 @@ export function CustomDrawerContent(props: any) {
       {/* Header Section */}
       <View style={styles.brandSection}>
         <Ionicons name="book" size={32} color="#6366f1" />
-        <Text style={styles.brandText}>Holy Bible</Text>
+        <Text style={styles.brandText}>መጽሐፍ ቅዱስ</Text>
       </View>
 
       {/* Modern Segmented Control */}
@@ -58,7 +58,7 @@ export function CustomDrawerContent(props: any) {
                 activeBar === 1 && styles.activeSegmentText,
               ]}
             >
-              Old Testament
+              ብሉይ ኪዳን
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -71,7 +71,7 @@ export function CustomDrawerContent(props: any) {
                 activeBar === 2 && styles.activeSegmentText,
               ]}
             >
-              New Testament
+              አዲስ ኪዳን
             </Text>
           </TouchableOpacity>
         </View>
@@ -157,14 +157,14 @@ const styles = StyleSheet.create({
   segmentedControl: {
     flexDirection: "row",
     backgroundColor: "#f1f5f9",
-    borderRadius: 12,
+    borderRadius: 4,
     padding: 4,
   },
   segment: {
     flex: 1,
     paddingVertical: 10,
     alignItems: "center",
-    borderRadius: 8,
+    borderRadius: 4,
   },
   activeSegment: {
     backgroundColor: "#ffffff",
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 4,
     marginBottom: 4,
   },
   bookItemActive: {
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
   iconCircle: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 4,
     backgroundColor: "#f1f5f9",
     justifyContent: "center",
     alignItems: "center",

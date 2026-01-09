@@ -97,7 +97,7 @@ export default function App() {
                 drawerStyle: { width: '80%' },
               }}
             >
-              <Drawer.Screen
+              <Drawer.Screen 
                 name="BookReader"
                 component={PageScreen}
                 initialParams={{
@@ -106,8 +106,7 @@ export default function App() {
                   chapterNumber: 1,
                 }}
                 options={{ 
-                  headerTitle: "መጽሐፍ ቅዱስ",
-                  headerShown: true 
+                  headerShown: false 
                 }}
               />
             </Drawer.Navigator>
