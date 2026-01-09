@@ -1,0 +1,49 @@
+Script started on 2026-01-08 21:38:27+03:00 [TERM="xterm-256color" TTY="/dev/pts/1" COLUMNS="80" LINES="24"]
+[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible[00m$ clear[Kmkdir script
+[?2004l[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible[00m$ cd script/
+[?2004l[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible/script[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible/script[00m$ bun init
+[?2004l
+[0m[36m?[0m Select a project template[2m - Press return to submit.[0m
+[?25l[0m[36m❯[0m   [4m[33mBlank[0m[24m[0K
+    [36mReact[0m[0K
+    [34mLibrary[0m[0K
+[0J[4A[0J[0m[32m✓[0m Select a project template[2m:[0m [33mBlank[0m[0m
+[?25h
+ + [0m[2m.gitignore[0m
+ + [0m[2mindex.ts[0m
+ + [0m[2mtsconfig.json (for editor autocomplete)[0m
+ + [0m[2mREADME.md[0m
+
+To get started, run:
+
+    [36mbun run index.ts[0m
+
+[0m[1mbun install [0m[2mv1.3.3 (274e01c7)[0m
+  🔍 Resolving [1/1] 
+[23D[0K  🔍 @types/bun [2/2] [24D[0K  🔍 @types/node [3/3] [25D[0K  🔍 undici-types [4/3] [26D[0K  🔍 typescript [5/4] [24D[0K  🔍 typescript [5/4] [24D[0K  🔒 Saving lockfile... [26D[0K
+[0m[32m+[0m [1m@types/bun[0m[2m@1.3.5[0m
+[0m[32m+[0m [1mtypescript[0m[2m@5.9.3[0m
+
+[32m5[0m packages[0m installed [0m[2m[[1m7.41s[0m[2m][0m[0m
+
+[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible/script[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible/script[00m$ 
+[?2004l[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible/script[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible/script[00m$ code .
+[?2004l[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible/script[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible/script[00m$ ls
+[?2004l80-weahadu.json  index.ts      package.json  tsconfig.json
+bun.lock         [0m[01;34mnode_modules[0m  README.md
+[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible/script[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible/script[00m$ bun index.ts 
+[?2004l[31merror[0m[2m: [0m[1mCannot find package 'better-sqlite3' from '/home/mrbg/Desktop/Bible/script/index.ts'[0m
+[0m
+[2mBun v1.3.3 (Linux x64)[0m
+[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible/script[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible/script[00m$ bun add [7mbetter-sqlite3[27mbetter-sqlite3
+[?2004l[0m[1mbun add [0m[2mv1.3.3 (274e01c7)[0m
+  🔍 Resolving [1/1] [23D[0K  🔍 better-sqlite3 [2/3] [28D[0K  🔍 bindings [3/3] [22D[0K  🔍 prebuild-install [4/14] [31D[0K  🔍 detect-libc [6/14] [26D[0K  🔍 node-abi [7/15] [23D[0K  🔍 tar-stream [16/29] [26D[0K  🔍 once [26/31] [20D[0K  🔍 fs-constants [27/31] [28D[0K  🔍 wrappy [31/34] [22D[0K  🔍 buffer [32/36] [22D[0K  🔍 base64-js [36/36] [25D[0K  🔍 mimic-response [37/36] [30D[0K  ⚙️  better-sqlite3 [1/1] [31D[0K  🔒 Saving lockfile... [26D[0K
+[0m[32minstalled[0m [1mbetter-sqlite3[0m[2m@12.5.0[0m
+
+[32m38[0m packages[0m installed [0m[2m[[1m5.02s[0m[2m][0m[0m
+[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop/Bible/script[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop/Bible/script[00m$ clea[K[K[Kd ..
+[?2004l[?2004h]0;mrbg@mrbg-HP-EliteBook-840-G3: ~/Desktop[01;32mmrbg@mrbg-HP-EliteBook-840-G3[00m:[01;34m~/Desktop[00m$ ls
+[?2004l[0m[01;34m80-weahadu[0m        [01;34mexp_server_collection[0m  [01;34mRecipe[0m          [01;34mshoe_shop[0m
+app-release.apk   [01;34mMeriSpareAdmin[0m         [01;34mRN-Chat[0m         [01;34mSH-Shop-Next[0m
+[01;34mBeChatServer2025[0m  [01;34mMeriSpareMacle[0m         [34;42mRNE-Commerce[0m    [01;34msmart-shop-admin[0m
+[01;34mBible[0m             [01;34mmy-sqlite-app[0m         

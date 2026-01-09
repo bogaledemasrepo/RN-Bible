@@ -14,8 +14,8 @@ import { useRoute, useNavigation, RouteProp } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { RootDrawerParamList } from "../types";
+import { DatabaseDebugger } from "../components/debug-db";
 
-const { width } = Dimensions.get("window");
 
 const PageScreen = () => {
   const db = useSQLiteContext();
@@ -77,6 +77,7 @@ const PageScreen = () => {
 
   return (
     <SafeAreaView>
+      <DatabaseDebugger />
       <Animated.FlatList
         ref={flatListRef}
         data={verses}
