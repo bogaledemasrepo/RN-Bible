@@ -76,7 +76,7 @@ const PageScreen = () => {
     setNextVerses(verses);
     setVerses(preVerses);
     fetchVerses(bookId, selectedChapter - 1).then((verses) => {
-      setSelectedChapter(selectedChapter + 1);
+      setSelectedChapter(selectedChapter - 1);
       setPreVerses(verses);
     });
     flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -120,7 +120,7 @@ const PageScreen = () => {
             ListHeaderComponent={
               <View style={styles.header}>
                 <Text style={styles.mainTitle}>{bookName}</Text>
-                <Text style={styles.chapterSubtitle}>ምዕራፍ {chapterNumber}</Text>
+                <Text style={styles.chapterSubtitle}>ምዕራፍ {selectedChapter}</Text>
                 <View style={styles.accentDots}>
                   <View style={styles.dot} />
                   <View style={[styles.dot, styles.dotLarge]} />
