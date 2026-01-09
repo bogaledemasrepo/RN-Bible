@@ -39,6 +39,9 @@ export const PagesProvider = ({ children }: { children: ReactNode }) => {
       chapterNumber: Math.max(1, prev.chapterNumber - 1)
     }));
   };
+  const getPageData = ()=>{
+    
+  }
   
   return (
     <PagesContext.Provider value={{ selection, navigateTo, nextChapter, prevChapter }}>

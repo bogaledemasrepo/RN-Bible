@@ -7,23 +7,19 @@ import {
   TouchableOpacity,
   Animated,
 } from "react-native";
-// 1. Import Gesture Handler components
 import {
   GestureHandlerRootView,
   PanGestureHandler,
-  State,
 } from "react-native-gesture-handler";
 import { useSQLiteContext } from "expo-sqlite";
-import { useRoute, useNavigation, RouteProp } from "@react-navigation/native";
+import { useRoute, RouteProp } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { RootDrawerParamList } from "../types";
 
-const SWIPE_THRESHOLD = 80; // Distance required to trigger page change
-
+const SWIPE_THRESHOLD = 80;
 const PageScreen = () => {
   const db = useSQLiteContext();
-  const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<RootDrawerParamList, "BookReader">>();
 
   const { bookId, bookName, chapterNumber } = route.params || {
@@ -37,20 +33,24 @@ const PageScreen = () => {
   const [selectedChapter, setSelectedChapter] = useState(1);
   const [nextVerses, setNextVerses] = useState<any[]>([]);
   const scrollY = useRef(new Animated.Value(0)).current;
+  const [maxChapter, setMaxChapter] = useState(1);
   const flatListRef = useRef<FlatList>(null);
 
-  // 2. Gesture Logic
   const onGestureEvent = (event: any) => {
     const { translationX } = event.nativeEvent;
 
-    // Swipe Right (Previous Chapter)
     if (translationX > SWIPE_THRESHOLD && chapterNumber > 1) {
       navigateBack();
-    }
-    // Swipe Left (Next Chapter)
-    else if (translationX < -SWIPE_THRESHOLD) {
+    } else if (translationX < -SWIPE_THRESHOLD) {
       navigateNext();
     }
+  };
+  const getMaxChapter = async (id: number) => {
+    const result: any = await db.getFirstAsync(
+      `SELECT MAX(chapter_number) as maxCh FROM chapters WHERE book_id = ?`,
+      [id]
+    );
+    setMaxChapter(result?.maxCh || 1);
   };
   async function fetchVerses(id: number, chapterNum: number) {
     return await db.getAllAsync(
@@ -83,6 +83,7 @@ const PageScreen = () => {
   };
 
   useEffect(() => {
+    getMaxChapter(bookId);
     fetchVerses(bookId, selectedChapter).then((verses) => setVerses(verses));
     fetchVerses(bookId, selectedChapter + 1).then((verses) =>
       setNextVerses(verses)
@@ -99,11 +100,9 @@ const PageScreen = () => {
     </View>
   );
 
-  return (
-    // 3. Wrap everything in GestureHandlerRootView
-    <GestureHandlerRootView style={{ flex: 1 }}>
+  return (<GestureHandlerRootView style={{ flex: 1 }}>
       <PanGestureHandler
-        activeOffsetX={[-20, 20]} // Prevents accidental swipes while scrolling vertically
+        activeOffsetX={[-20, 20]}
         onEnded={onGestureEvent}
       >
         <SafeAreaView style={styles.container}>
@@ -120,7 +119,9 @@ const PageScreen = () => {
             ListHeaderComponent={
               <View style={styles.header}>
                 <Text style={styles.mainTitle}>{bookName}</Text>
-                <Text style={styles.chapterSubtitle}>ምዕራፍ {selectedChapter}</Text>
+                <Text style={styles.chapterSubtitle}>
+                  ምዕራፍ {selectedChapter}
+                </Text>
                 <View style={styles.accentDots}>
                   <View style={styles.dot} />
                   <View style={[styles.dot, styles.dotLarge]} />
@@ -146,7 +147,7 @@ const PageScreen = () => {
                   <Text
                     style={[
                       styles.navBtnText,
-                      chapterNumber <= 1 && styles.disabledBtnText,
+                      selectedChapter <= 1 && styles.disabledBtnText,
                     ]}
                   >
                     የቀደመው
@@ -154,11 +155,26 @@ const PageScreen = () => {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.navBtn}
+                  style={[
+                    styles.navBtn,
+                    chapterNumber >= maxChapter && styles.disabledBtn,
+                  ]}
                   onPress={navigateNext}
+                  disabled={chapterNumber >= maxChapter}
                 >
-                  <Text style={styles.navBtnText}>ቀጣይ</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#6366f1" />
+                  <Ionicons
+                    name="arrow-forward"
+                    size={20}
+                    color={chapterNumber >= maxChapter ? "#cbd5e1" : "#6366f1"}
+                  />
+                  <Text
+                    style={[
+                      styles.navBtnText,
+                      selectedChapter <= 1 && styles.disabledBtnText,
+                    ]}
+                  >
+                    ቀጣይ
+                  </Text>
                 </TouchableOpacity>
               </View>
             }

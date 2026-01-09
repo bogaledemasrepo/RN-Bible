@@ -7,8 +7,6 @@ import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { NavigationContainer } from "@react-navigation/native";
 import { createDrawerNavigator } from "@react-navigation/drawer";
-
-// Internal Providers and Screens
 import { PagesProvider } from "./context/use-pages-context";
 import { CustomDrawerContent } from "./components/custom-drawer-content";
 import PageScreen from "./screens/PageScreen";
