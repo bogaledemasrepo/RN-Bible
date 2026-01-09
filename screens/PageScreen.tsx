@@ -4,7 +4,6 @@ import {
   Text,
   FlatList,
   StyleSheet,
-  ActivityIndicator,
   TouchableOpacity,
   Animated,
 } from "react-native";
@@ -37,7 +36,6 @@ const PageScreen = () => {
   const [preVerses, setPreVerses] = useState<any[]>([]);
   const [selectedChapter, setSelectedChapter] = useState(1);
   const [nextVerses, setNextVerses] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const scrollY = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
 
@@ -47,11 +45,11 @@ const PageScreen = () => {
 
     // Swipe Right (Previous Chapter)
     if (translationX > SWIPE_THRESHOLD && chapterNumber > 1) {
-      navigation.setParams({ chapterNumber: chapterNumber - 1 });
+      navigateBack();
     }
     // Swipe Left (Next Chapter)
     else if (translationX < -SWIPE_THRESHOLD) {
-      navigation.setParams({ chapterNumber: chapterNumber + 1 });
+      navigateNext();
     }
   };
   async function fetchVerses(id: number, chapterNum: number) {

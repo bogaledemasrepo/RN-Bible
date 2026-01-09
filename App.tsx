@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View } from "react-native";
 import { Directory, File, Paths } from 'expo-file-system';
 import { Asset, useAssets } from 'expo-asset';
 import { SQLiteProvider } from "expo-sqlite";
