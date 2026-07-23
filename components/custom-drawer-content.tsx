@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   StyleSheet,
   View,
@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { DrawerContentScrollView } from "@react-navigation/drawer";
-import { useSQLiteContext } from "expo-sqlite";
 import { Book } from "../types";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons"; // Assuming you have Expo icons
@@ -15,24 +14,7 @@ export function CustomDrawerContent(props: any) {
   const [navData, setNavData] = useState<Book[]>([]);
   const [activeBar, setActiveBar] = useState<1 | 2>(1);
   const { navigation, state } = props; // state helps track which route is active
-  const db = useSQLiteContext();
-  const [books, setBooks] = useState<Book[]>([]);
-
-  useEffect(() => {
-    db.getAllAsync("SELECT * FROM books").then((res) => {
-      const fetchedBooks = res as Book[];
-      setBooks(fetchedBooks);
-      setNavData(fetchedBooks.filter((item) => item.testament === "old"));
-    });
-  }, []);
-
-  const handlePress = (param: 1 | 2) => {
-    setActiveBar(param);
-    setNavData(
-      books.filter((item) => item.testament === (param === 1 ? "old" : "new"))
-    );
-  };
-
+ 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.brandSection}>
@@ -42,7 +24,7 @@ export function CustomDrawerContent(props: any) {
       <View style={styles.segmentedControlWrapper}>
         <View style={styles.segmentedControl}>
           <TouchableOpacity
-            onPress={() => handlePress(1)}
+            onPress={() =>{}}
             style={[styles.segment, activeBar === 1 && styles.activeSegment]}
           >
             <Text
@@ -55,7 +37,7 @@ export function CustomDrawerContent(props: any) {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => handlePress(2)}
+            onPress={() => {}}
             style={[styles.segment, activeBar === 2 && styles.activeSegment]}
           >
             <Text

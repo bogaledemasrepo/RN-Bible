@@ -23,11 +23,27 @@ export interface Verse {
 }
 
 export interface Book {
-  id: number;
-  name: string;
+  id:number,
+  value: string;
+  intValue: number;
 }
 
 export type RootDrawerParamList = {
   Home: undefined; // No params expected
   BookReader: { bookId: number; bookName: string; chapterNumber: number }; // Params expected
 };
+
+export type ItemProps = {
+  children: React.ReactNode
+  setImages: (img: any) => void
+}
+
+export type RenderPageProps = {
+  item: any
+  index: number
+}
+
+export type PageCurlHandle = {
+  next: () => void
+  prev: () => void
+}
