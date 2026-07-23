@@ -1,267 +1,406 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react"
+import { Dimensions, StyleSheet, Text, View } from "react-native"
 import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-} from "react-native";
-import {
-  GestureHandlerRootView,
-  PanGestureHandler,
-} from "react-native-gesture-handler";
-import { useSQLiteContext } from "expo-sqlite";
-import { useRoute, RouteProp } from "@react-navigation/native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { RootDrawerParamList } from "../types";
+  Canvas,
+  ImageShader,
+  Skia,
+  Shader,
+  useImage,
+  Fill,
+  makeImageFromView
+} from "@shopify/react-native-skia"
+import { useDerivedValue, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
+import { Gesture, GestureDetector } from "react-native-gesture-handler"
 
-const SWIPE_THRESHOLD = 80;
-const PageScreen = () => {
-  const db = useSQLiteContext();
-  const route = useRoute<RouteProp<RootDrawerParamList, "BookReader">>();
+const { width, height } = Dimensions.get("screen")
 
-  const { bookId, bookName, chapterNumber } = route.params || {
-    bookId: 1,
-    bookName: "ኦሪት ዘፍጥረት",
-    chapterNumber: 1,
-  };
+const pageCurlShader = `
+  uniform shader fromImg;
+  uniform shader toImg;
+  uniform float2 resolution;
+  uniform float progress;
+  uniform float topFlag;   // 1.0: top, 0.0: bottom
 
-  const [verses, setVerses] = useState<any[]>([]);
-  const [preVerses, setPreVerses] = useState<any[]>([]);
-  const [selectedChapter, setSelectedChapter] = useState(1);
-  const [nextVerses, setNextVerses] = useState<any[]>([]);
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const [maxChapter, setMaxChapter] = useState(1);
-  const flatListRef = useRef<FlatList>(null);
+  const float MIN_AMOUNT = -0.26;
+  const float MAX_AMOUNT = 1.15;
+  const float PI = 3.141592653589793;
+  const float scale = 512.0;
+  const float sharpness = 3.0;
 
-  const onGestureEvent = (event: any) => {
-    const { translationX } = event.nativeEvent;
-    if (translationX > SWIPE_THRESHOLD && selectedChapter > 1) {
-      navigateBack();
-    } else if (translationX < -SWIPE_THRESHOLD) {
-      navigateNext();
+  float2 mapUV(float2 uv){ return (topFlag < 0.5) ? float2(uv.x, 1.0 - uv.y) : uv; }
+  float2 geomUV(float2 uv){ return (topFlag < 0.5) ? float2(uv.x, 1.0 - uv.y) : uv; }
+
+  float4 getFromColor(float2 p){ return fromImg.eval(mapUV(p) * resolution); }
+  float4 getToColor  (float2 p){ return toImg.eval  (mapUV(p) * resolution); }
+
+  float3 hitPoint(float hitAngle, float yc, float3 point, float3x3 rrotation){
+    float hit = hitAngle / (2.0 * PI);
+    point.y = hit;
+    return float3(rrotation * point);
+  }
+
+  float4 antiAlias(float4 c1, float4 c2, float distanc){
+    distanc *= scale;
+    if (distanc < 0.0) return c2;
+    if (distanc > 2.0) return c1;
+    float dd = pow(1.0 - distanc / 2.0, sharpness);
+    return ((c2 - c1) * dd) + c1;
+  }
+
+  float distanceToEdge(float3 point){
+    float dx = abs(point.x > 0.5 ? 1.0 - point.x : point.x);
+    float dy = abs(point.y > 0.5 ? 1.0 - point.y : point.y);
+    if (point.x < 0.0) dx = -point.x;
+    if (point.x > 1.0) dx = point.x - 1.0;
+    if (point.y < 0.0) dy = -point.y;
+    if (point.y > 1.0) dy = point.y - 1.0;
+    if ((point.x < 0.0 || point.x > 1.0) && (point.y < 0.0 || point.y > 1.0)) return sqrt(dx*dx+dy*dy);
+    return min(dx, dy);
+  }
+
+  float4 seeThrough(float yc, float2 p, float3x3 rotation, float3x3 rrotation, float cylinderAngle, float cylinderRadius){
+    float hitAngle = PI - (acos(yc / cylinderRadius) - cylinderAngle);
+    float3 point = hitPoint(hitAngle, yc, rotation * float3(p,1.0), rrotation);
+    if (yc <= 0.0 && (point.x<0.0||point.y<0.0||point.x>1.0||point.y>1.0)) return getToColor(p);
+    if (yc > 0.0) return getFromColor(p);
+    float4 color = getFromColor(point.xy);
+    return antiAlias(color, float4(0.0), distanceToEdge(point));
+  }
+
+  float4 seeThroughWithShadow(float yc, float2 p, float3 point, float3x3 rotation, float3x3 rrotation, float cylinderAngle, float cylinderRadius, float amount){
+    float shadow = (1.0 - distanceToEdge(point) * 30.0) / 3.0;
+    if (shadow < 0.0) shadow = 0.0; else shadow *= amount;
+    float4 sc = seeThrough(yc, p, rotation, rrotation, cylinderAngle, cylinderRadius);
+    sc.rgb -= shadow;
+    return sc;
+  }
+
+  float4 backside(float yc, float3 point){
+    float4 color = getFromColor(point.xy);
+    float gray = (color.r + color.g + color.b) / 15.0;
+    gray += 0.8 * (pow(1.0 - abs(yc / (1.0/PI/2.0)), 0.2) * 0.5 + 0.5);
+    color.rgb = float3(gray);
+    return color;
+  }
+
+  float4 behindSurface(float2 p, float yc, float3 point, float3x3 rrotation, float cylinderAngle, float cylinderRadius, float amount){
+    float shado = (1.0 - ((-cylinderRadius - yc) / amount * 7.0)) / 6.0;
+    shado *= 1.0 - abs(point.x - 0.5);
+    yc = (-cylinderRadius - cylinderRadius - yc);
+    float hitAngle = (acos(yc / cylinderRadius) + cylinderAngle) - PI;
+    point = hitPoint(hitAngle, yc, point, rrotation);
+    if (yc < 0.0 && point.x>=0.0 && point.y>=0.0 && point.x<=1.0 && point.y<=1.0 && (hitAngle < PI || amount > 0.5)){
+      shado = 1.0 - (sqrt((point.x-0.5)*(point.x-0.5) + (point.y-0.5)*(point.y-0.5)) / 0.71);
+      shado *= pow(-yc / cylinderRadius, 3.0) * 0.5;
+    } else {
+      shado = 0.0;
+    }
+    float3 base = getToColor(p).rgb;
+    return float4(base - shado, 1.0);
+  }
+
+  float4 main(float2 xy){
+    float2 uv = xy / resolution;
+    float2 p = geomUV(uv);
+
+    float amount = progress * (MAX_AMOUNT - MIN_AMOUNT) + MIN_AMOUNT;
+    float cylinderCenter = amount;
+    float cylinderAngle = 2.0 * PI * amount;
+    float cylinderRadius = 1.0 / PI / 2.0;
+
+    float angle = 100.0 * PI / 180.0;
+    float c = cos(-angle), s = sin(-angle);
+    float3x3 rotation = float3x3( c, s, 0.0, -s, c, 0.0, -0.801, 0.8900, 1.0 );
+    c = cos(angle); s = sin(angle);
+    float3x3 rrotation = float3x3( c, s, 0.0, -s, c, 0.0, 0.98500, 0.985, 1.0 );
+
+    float3 point = rotation * float3(p, 1.0);
+    float yc = point.y - cylinderCenter;
+
+    if (yc < -cylinderRadius) return behindSurface(p, yc, point, rrotation, cylinderAngle, cylinderRadius, amount);
+    if (yc >  cylinderRadius)  return getFromColor(p);
+
+    float hitAngle = (acos(yc / cylinderRadius) + cylinderAngle) - PI;
+    float hitAngleMod = mod(hitAngle, 2.0 * PI);
+    if ((hitAngleMod > PI && amount < 0.5) || (hitAngleMod > PI/2.0 && amount < 0.0)) {
+      return seeThrough(yc, p, rotation, rrotation, cylinderAngle, cylinderRadius);
+    }
+
+    point = hitPoint(hitAngle, yc, point, rrotation);
+    if (point.x<0.0||point.y<0.0||point.x>1.0||point.y>1.0) {
+      return seeThroughWithShadow(yc, p, point, rotation, rrotation, cylinderAngle, cylinderRadius, amount);
+    }
+
+    float4 color = backside(yc, point);
+    float4 otherColor = (yc < 0.0)
+      ? float4(0.0, 0.0, 0.0, (1.0 - (sqrt((point.x-0.5)*(point.x-0.5)+(point.y-0.5)*(point.y-0.5)) / 0.71)) * pow(-yc / cylinderRadius,3.0) * 0.5 )
+      : getFromColor(p);
+
+    color = antiAlias(color, otherColor, cylinderRadius - abs(yc));
+    float4 cl = seeThroughWithShadow(yc, p, point, rotation, rrotation, cylinderAngle, cylinderRadius, amount);
+    float dist = distanceToEdge(point);
+    return antiAlias(color, cl, dist);
+  }
+`
+
+type ItemProps = {
+  children: React.ReactNode
+  setImages: (img: any) => void
+}
+
+type RenderPageProps = {
+  item: any
+  index: number
+}
+
+type Props = {
+  images?: any[]
+  data?: string[] | any[]
+  renderPage?: (props: RenderPageProps) => React.ReactNode
+  gestureEnabled?: boolean
+}
+
+export type PageCurlHandle = {
+  next: () => void
+  prev: () => void
+}
+
+function Item({ children, setImages }: ItemProps) {
+  const ref = useRef<View>(null);
+  const taken = useRef(false);
+
+  const getSnapshot = async () => {
+    if (taken.current) return;
+    taken.current = true;
+
+    // Allow frames to render completely before taking the snapshot
+    await new Promise((r) => setTimeout(r, 100));
+
+    try {
+      const image = await makeImageFromView(ref as any);
+      if (image) {
+        setImages(image);
+      }
+    } catch (e) {
+      console.warn("Snapshot capture failed:", e);
     }
   };
-  const getMaxChapter = async (id: number) => {
-    const result: any = await db.getFirstAsync(
-      `SELECT MAX(chapter_number) as maxCh FROM chapters WHERE book_id = ?`,
-      [id]
-    );
-    console.log(result);
-    setMaxChapter(result?.maxCh || 1);
-  };
-  async function fetchVerses(id: number, chapterNum: number) {
-    return await db.getAllAsync(
-      `SELECT v.verse_number, v.verse_text 
-           FROM verses v
-           JOIN chapters c ON v.chapter_id = c.chapter_id
-           WHERE c.book_id = ? AND c.chapter_number = ?
-           ORDER BY v.verse_number ASC`,
-      [id, chapterNum]
-    );
-  }
-  const navigateNext = async () => {
-    if (selectedChapter == maxChapter) return;
-    setPreVerses(verses);
-    setVerses(nextVerses);
-    fetchVerses(bookId, selectedChapter + 1).then((verses) => {
-      setSelectedChapter(selectedChapter + 1);
-      setNextVerses(verses);
-    });
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-  };
-  const navigateBack = async () => {
-    if (selectedChapter == 1) return;
-    setNextVerses(verses);
-    setVerses(preVerses);
-    fetchVerses(bookId, selectedChapter - 1).then((verses) => {
-      setSelectedChapter(selectedChapter - 1);
-      setPreVerses(verses);
-    });
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-  };
-
-  useEffect(() => {
-    getMaxChapter(bookId);
-    setSelectedChapter(chapterNumber);
-    fetchVerses(bookId, selectedChapter).then((verses) => setVerses(verses));
-    fetchVerses(bookId, selectedChapter + 1).then((verses) =>
-      setNextVerses(verses)
-    );
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [bookId]);
-  const renderVerse = ({ item }: any) => (
-    <View style={styles.verseContainer}>
-      <Text style={styles.verseText}>
-        <Text style={styles.verseNumber}>{item.verse_number}</Text>
-        {"  "}
-        {item.verse_text}
-      </Text>
-    </View>
-  );
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <PanGestureHandler activeOffsetX={[-20, 20]} onEnded={onGestureEvent}>
-        <SafeAreaView style={styles.container}>
-          <Animated.FlatList
-            ref={flatListRef}
-            data={verses}
-            keyExtractor={(item: any) => item.verse_number.toString()}
-            renderItem={renderVerse}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-              { useNativeDriver: true }
-            )}
-            contentContainerStyle={styles.listContent}
-            ListHeaderComponent={
-              <View style={styles.header}>
-                <Text style={styles.mainTitle}>{bookName}</Text>
-                <Text style={styles.chapterSubtitle}>
-                  ምዕራፍ {selectedChapter}
-                </Text>
-                <View style={styles.accentDots}>
-                  <View style={styles.dot} />
-                  <View style={[styles.dot, styles.dotLarge]} />
-                  <View style={styles.dot} />
-                </View>
-              </View>
-            }
-            ListFooterComponent={
-              <View style={styles.footer}>
-                <TouchableOpacity
-                  style={[
-                    styles.navBtn,
-                    selectedChapter == 1 && styles.disabledBtn,
-                  ]}
-                  onPress={navigateBack}
-                  disabled={selectedChapter <= 1}
-                >
-                  <Ionicons
-                    name="arrow-back"
-                    size={20}
-                    color={selectedChapter == 1 ? "#cbd5e1" : "#6366f1"}
-                  />
-                  <Text
-                    style={[
-                      styles.navBtnText,
-                      selectedChapter == 1 && styles.disabledBtnText,
-                    ]}
-                  >
-                    የቀደመው
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.navBtn,
-                    selectedChapter == maxChapter && styles.disabledBtn,
-                  ]}
-                  onPress={navigateNext}
-                  disabled={selectedChapter == maxChapter}
-                >
-                  <Text
-                    style={[
-                      styles.navBtnText,
-                      selectedChapter == maxChapter && styles.disabledBtnText,
-                    ]}
-                  >
-                    ቀጣይ
-                  </Text>
-                  <Ionicons
-                    name="arrow-forward"
-                    size={20}
-                    color={
-                      selectedChapter == maxChapter ? "#cbd5e1" : "#6366f1"
-                    }
-                  />
-                </TouchableOpacity>
-              </View>
-            }
-          />
-        </SafeAreaView>
-      </PanGestureHandler>
-    </GestureHandlerRootView>
+    <View onLayout={getSnapshot} collapsable={false} ref={ref} style={{ width, height }}>
+      {children}
+    </View>
   );
-};
+}
+
+const PageCurl = forwardRef<PageCurlHandle, Props>(
+  function PageCurl({ images, data, renderPage, gestureEnabled = true }, ref) {
+    const dataLength = images?.length ?? data?.length ?? 0
+
+    const imgs = images?.map((item: any) => useImage(item))
+
+    const img1Index = useSharedValue(0)
+    const topFlag = useSharedValue(0)
+    const currentAnim = useSharedValue("next")
+    const currentIndex = useSharedValue(0)
+    const startX = useSharedValue(0)
+
+    const effect = useMemo(() => Skia.RuntimeEffect.Make(pageCurlShader)!, [])
+    const [viewImages, setViewImages] = useState<any[]>([])
+
+    const progress = useSharedValue(0)
+
+    const uniforms = useDerivedValue(
+      () => ({
+        resolution: [width, height] as [number, number],
+        progress: progress.value,
+        topFlag: topFlag.value
+      }),
+      []
+    )
+
+    const img1 = useDerivedValue(() => {
+      return imgs?.[img1Index.value] || viewImages[img1Index.value]
+    }, [imgs, viewImages])
+
+    const img2 = useDerivedValue(() => {
+      return imgs?.[img1Index.value + 1] || viewImages[img1Index.value + 1]
+    }, [imgs, viewImages])
+
+    const gesture = Gesture.Pan()
+      .manualActivation(true)
+      .onTouchesDown((e) => {
+        startX.value = e.allTouches[0].x
+      })
+      .onTouchesMove((e, gesture) => {
+        const x = e.allTouches[0].x
+        if (
+          (x - startX.value > 0 && currentIndex.value === 0) ||
+          (x - startX.value < 0 && currentIndex.value === dataLength - 1)
+        ) {
+          gesture.fail()
+          return
+        }
+
+        gesture.activate()
+      })
+      .onStart((e) => {
+        if (e.translationX > 0) {
+          currentAnim.value = "prev"
+          if (img1Index.value !== 0 && currentIndex.value !== dataLength - 1) {
+            img1Index.value--
+          }
+        } else {
+          currentAnim.value = "next"
+        }
+        topFlag.value = e.y < height / 2 ? 0 : 1
+      })
+      .onChange((e) => {
+        progress.value = Math.abs(
+          currentAnim.value === "prev"
+            ? 1 - e.translationX / width
+            : e.translationX / width
+        )
+      })
+      .onEnd((e) => {
+        if (Math.abs(e.translationX) > width / 2) {
+          progress.value = withSpring(
+            currentAnim.value === "next" ? 1 : 0,
+            {},
+            (finished) => {
+              if (finished) {
+                currentIndex.value = currentIndex.value + (currentAnim.value === "next" ? 1 : -1)
+              }
+              if (
+                finished &&
+                img1Index.value + 1 !== dataLength - 1 &&
+                currentAnim.value === "next"
+              ) {
+                img1Index.value++
+                progress.value = 0
+              }
+            }
+          )
+        } else {
+          progress.value = withTiming(currentAnim.value === "prev" ? 1 : 0)
+        }
+      })
+      .enabled(gestureEnabled)
+
+    const setImages = (img: any, index: number) => {
+      setViewImages((prev) => {
+        if (prev[index]) return prev
+        const next = [...prev]
+        next[index] = img
+        return next
+      })
+    }
+
+    const next = () => {
+      if (currentIndex.value === dataLength - 1) return
+
+      progress.value = withTiming(1, { duration: 800 }, (finished) => {
+        if (finished) {
+          currentIndex.value++
+        }
+
+        if (finished && img1Index.value + 1 !== dataLength - 1) {
+          img1Index.value++
+          progress.value = 0
+        }
+      })
+    }
+
+    const prev = () => {
+      if (currentIndex.value === 0) return
+
+      if (img1Index.value !== 0 && currentIndex.value !== dataLength - 1) {
+        progress.value = 1
+        img1Index.value--
+      }
+
+      progress.value = withTiming(0, { duration: 800 }, () => {
+        if (currentIndex.value !== 0) {
+          currentIndex.value--
+        }
+      })
+    }
+
+    useImperativeHandle(ref, () => ({ next, prev }), [next, prev])
+
+    const isCapturing = (!images || images.length === 0) && viewImages.length < (data?.length ?? 0)
+
+    return (
+      <GestureDetector gesture={gesture}>
+        <View style={{ width, height }}>
+          {isCapturing ? (
+            // Off-screen capture pass
+            data?.map((item, index) => (
+              <Item
+                key={index}
+                setImages={(img) => setImages(img, index)}
+              >
+                {renderPage ? (
+                  renderPage({ item, index })
+                ) : (
+                  <View style={styles.defaultPage}>
+                    <Text style={styles.defaultText}>
+                      {typeof item === "string" ? item : JSON.stringify(item)}
+                    </Text>
+                  </View>
+                )}
+              </Item>
+            ))
+          ) : (
+            // Shader pass after images are captured
+            <Canvas style={{ width, height }}>
+              <Fill>
+                <Shader source={effect} uniforms={uniforms}>
+                  <ImageShader image={img1} fit="cover" width={width} height={height} />
+                  <ImageShader image={img2} fit="cover" width={width} height={height} />
+                </Shader>
+              </Fill>
+            </Canvas>
+          )}
+        </View>
+      </GestureDetector>
+    )
+  }
+)
+
+const BIBLE_STRINGS = [
+  "መዝሙር 80\n\n12. እስራኤልም ሰምቶኝ ቢሆን፥ እግዚአብሔር እንዲህ ይላል፡\n13. በጠላቶቻቸው ላይ እጄን በጣልኩ፥ ጠላቶቻቸውን ባዋረድኩ ነበር።",
+  "መዝሙር 81\n\n1. ለረዳታችን ለእግዚአብሔር እልል በሉ፥ ለያዕቆብ አምላክ እልል በሉ፤\n2. መዝሙር አንሡ ከበሮንም ስጡ፥ ደስ የሚያሰኘውን በገና ከበገና ጋር።",
+  "መዝሙር 82\n\n1. አምላክ በ አማልክት ማኅበር ቆመ፥ በአማልክት መካከል ይፈርዳል።\n2. እስከ መቼ ዓመፃን ትፈርዳላችሁ? ለኃጢአተኞችስ እስከ መቼ ታደላላችሁ?"
+];
+
+function PageScreen() {
+  const curlRef = useRef<PageCurlHandle>(null);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <PageCurl 
+        ref={curlRef}
+        data={BIBLE_STRINGS}
+        gestureEnabled={true}
+      />
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  listContent: { paddingHorizontal: 24, paddingBottom: 60 },
+  defaultPage: {
+    flex: 1,
+    backgroundColor: '#FAF8F5',
+    padding: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  defaultText: {
+    fontSize: 18,
+    lineHeight: 30,
+    color: '#2C2C2C',
+  },
+})
 
-  // Header Design
-  header: { alignItems: "center", marginTop: 40, marginBottom: 30 },
-  bookBadge: {
-    backgroundColor: "#f5f3ff",
-    color: "#6366f1",
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-    fontSize: 12,
-    fontWeight: "700",
-    marginBottom: 8,
-    textTransform: "uppercase",
-  },
-  mainTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#1e293b",
-    textAlign: "center",
-  },
-  chapterSubtitle: {
-    fontSize: 16,
-    color: "#64748b",
-    marginTop: 4,
-    fontWeight: "400",
-  },
-  accentDots: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 20,
-  },
-  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "#e2e8f0" },
-  dotLarge: { width: 24, backgroundColor: "#6366f1" },
-
-  // Verse Design
-  verseContainer: { marginBottom: 8 },
-  verseText: {
-    fontSize: 14,
-    color: "#334155",
-    textAlign: "left",
-  },
-  verseNumber: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#6366f1",
-    position: "relative",
-    top: -4,
-  },
-
-  // Footer Design
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 60,
-    paddingBottom: 40,
-  },
-  navBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-  },
-  navBtnText: { fontSize: 16, fontWeight: "600", color: "#6366f1" },
-  disabledBtn: { backgroundColor: "#fff", borderColor: "#fff" },
-  disabledBtnText: { color: "#cbd5e1" },
-});
-
-export default PageScreen;
+export default PageScreen

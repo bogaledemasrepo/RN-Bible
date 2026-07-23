@@ -60,7 +60,8 @@
           },
           "imageWidth": 200
         }
-      ]
+      ],
+      "expo-status-bar"
     ]
   }
 }

@@ -8,8 +8,8 @@ import { useFonts } from "expo-font";
 import { NavigationContainer } from "@react-navigation/native";
 import { createDrawerNavigator } from "@react-navigation/drawer";
 import { CustomDrawerContent } from "./components/custom-drawer-content";
-import PageScreen from "./screens/PageScreen";
 import { RootDrawerParamList } from "./types";
+import PageScreen from "./screens/PageScreen";
 
 const Drawer = createDrawerNavigator<RootDrawerParamList>();
 
