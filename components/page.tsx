@@ -1,42 +1,58 @@
-import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react"
-import { Dimensions, StyleSheet, Text, View } from "react-native"
+import React, {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Dimensions, StyleSheet, Text, View } from "react-native";
 import {
   Canvas,
-  ImageShader,
-  Skia,
-  Shader,
-  useImage,
   Fill,
-  makeImageFromView
-} from "@shopify/react-native-skia"
-import { useDerivedValue, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
-import { Gesture, GestureDetector } from "react-native-gesture-handler"
-import { ItemProps, PageCurlHandle, RenderPageProps } from "../types"
-import { pageCurlShader } from "../constants"
+  ImageShader,
+  makeImageFromView,
+  Shader,
+  Skia,
+  useImage,
+  SkImage,
+} from "@shopify/react-native-skia";
+import {
+  useDerivedValue,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
-const { width, height } = Dimensions.get("screen")
+import { ItemProps, PageCurlHandle, RenderPageProps } from "../types";
+import { pageCurlShader } from "../constants";
 
+const { width, height } = Dimensions.get("screen");
 
 type Props = {
-  images?: any[]
-  data?: string[] | any[]
-  renderPage?: (props: RenderPageProps) => React.ReactNode
-  gestureEnabled?: boolean
-}
+  images?: any[];
+  data?: any[];
+  renderPage?: (props: RenderPageProps) => React.ReactNode;
+  gestureEnabled?: boolean;
+};
 
-function Item({ children, setImages }: ItemProps) {
-  const ref = useRef<View>(null);
-  const taken = useRef(false);
+// ==========================================
+// Sub-Component: Off-Screen View Snapshot Item
+// ==========================================
+function CaptureItem({ children, setImages }: ItemProps) {
+  const viewRef = useRef<View>(null);
+  const isCaptured = useRef(false);
 
-  const getSnapshot = async () => {
-    if (taken.current) return;
-    taken.current = true;
+  const handleLayout = async () => {
+    if (isCaptured.current) return;
+    isCaptured.current = true;
 
-    // Allow frames to render completely before taking the snapshot
-    await new Promise((r) => setTimeout(r, 100));
+    // Brief delay to allow views to settle before snapshot
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     try {
-      const image = await makeImageFromView(ref as any);
+      const image = await makeImageFromView(viewRef as any);
       if (image) {
         setImages(image);
       }
@@ -46,203 +62,271 @@ function Item({ children, setImages }: ItemProps) {
   };
 
   return (
-    <View onLayout={getSnapshot} collapsable={false} ref={ref} style={{ width, height, borderWidth: 1, borderColor: "#333" }}>
+    <View
+      ref={viewRef}
+      onLayout={handleLayout}
+      collapsable={false}
+      style={styles.captureContainer}
+    >
       {children}
     </View>
   );
 }
 
-const PageCurl = forwardRef<PageCurlHandle, Props>(
-  function PageCurl({ images, data, renderPage, gestureEnabled = true }, ref) {
-    const dataLength = images?.length ?? data?.length ?? 0
+// ==========================================
+// Main Component: PageCurl Shader View
+// ==========================================
+const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
+  { images, data, renderPage, gestureEnabled = true },
+  ref
+) {
+  const dataLength = images?.length ?? data?.length ?? 0;
 
-    const imgs = images?.map((item: any) => useImage(item))
+  // Skia Resources & State
+  const loadedImages = images?.map((item: any) => useImage(item));
+  const [viewImages, setViewImages] = useState<SkImage[]>([]);
 
-    const img1Index = useSharedValue(0)
-    const topFlag = useSharedValue(0)
-    const currentAnim = useSharedValue("next")
-    const currentIndex = useSharedValue(0)
-    const startX = useSharedValue(0)
+  // Animation Shared Values
+  const img1Index = useSharedValue(0);
+  const topFlag = useSharedValue(0);
+  const currentAnim = useSharedValue<"next" | "prev">("next");
+  const currentIndex = useSharedValue(0);
+  const startX = useSharedValue(0);
+  const progress = useSharedValue(0);
 
-    const effect = useMemo(() => Skia.RuntimeEffect.Make(pageCurlShader)!, [])
-    const [viewImages, setViewImages] = useState<any[]>([])
+  // Compile Skia Shader
+  const shaderEffect = useMemo(
+    () => Skia.RuntimeEffect.Make(pageCurlShader)!,
+    []
+  );
 
-    const progress = useSharedValue(0)
+  // Shader Uniforms
+  const uniforms = useDerivedValue(
+    () => ({
+      resolution: [width, height] as [number, number],
+      progress: progress.value,
+      topFlag: topFlag.value,
+    }),
+    [progress, topFlag]
+  );
 
-    const uniforms = useDerivedValue(
-      () => ({
-        resolution: [width, height] as [number, number],
-        progress: progress.value,
-        topFlag: topFlag.value
-      }),
-      []
-    )
+  // ==========================================
+  // Texture Selection for Forward & Backward
+  // ==========================================
+  const img1 = useDerivedValue(() => {
+    const idx = img1Index.value;
+    return loadedImages?.[idx] || viewImages[idx];
+  }, [loadedImages, viewImages, img1Index]);
 
-    const img1 = useDerivedValue(() => {
-      return imgs?.[img1Index.value] || viewImages[img1Index.value]
-    }, [imgs, viewImages])
+  const img2 = useDerivedValue(() => {
+    // When swiping backward, show the previous index underneath
+    const idx = currentAnim.value === "prev" ? img1Index.value - 1 : img1Index.value + 1;
+    return loadedImages?.[idx] || viewImages[idx];
+  }, [loadedImages, viewImages, img1Index, currentAnim]);
 
-    const img2 = useDerivedValue(() => {
-      return imgs?.[img1Index.value + 1] || viewImages[img1Index.value + 1]
-    }, [imgs, viewImages])
+  // ==========================================
+  // Pan Gesture Update
+  // ==========================================
+  const gesture = Gesture.Pan()
+    .manualActivation(true)
+    .onTouchesDown((e) => {
+      startX.value = e.allTouches[0].x;
+    })
+    .onTouchesMove((e, state) => {
+      const currentX = e.allTouches[0].x;
+      const deltaX = currentX - startX.value;
 
-    const gesture = Gesture.Pan()
-      .manualActivation(true)
-      .onTouchesDown((e) => {
-        startX.value = e.allTouches[0].x
-      })
-      .onTouchesMove((e, gesture) => {
-        const x = e.allTouches[0].x
-        if (
-          (x - startX.value > 0 && currentIndex.value === 0) ||
-          (x - startX.value < 0 && currentIndex.value === dataLength - 1)
-        ) {
-          gesture.fail()
-          return
-        }
+      // Must move at least 10px to determine direction reliably
+      if (Math.abs(deltaX) < 10) return;
 
-        gesture.activate()
-      })
-      .onStart((e) => {
-        if (e.translationX > 0) {
-          currentAnim.value = "prev"
-          if (img1Index.value !== 0 && currentIndex.value !== dataLength - 1) {
-            img1Index.value--
-          }
-        } else {
-          currentAnim.value = "next"
-        }
-        topFlag.value = e.y < height / 2 ? 0 : 1
-      })
-      .onChange((e) => {
-        progress.value = Math.abs(
-          currentAnim.value === "prev"
-            ? 1 - e.translationX / width
-            : e.translationX / width
-        )
-      })
-      .onEnd((e) => {
-        if (Math.abs(e.translationX) > width / 2) {
-          progress.value = withSpring(
-            currentAnim.value === "next" ? 1 : 0,
-            {},
-            (finished) => {
-              if (finished) {
-                currentIndex.value = currentIndex.value + (currentAnim.value === "next" ? 1 : -1)
-              }
-              if (
-                finished &&
-                img1Index.value + 1 !== dataLength - 1 &&
-                currentAnim.value === "next"
-              ) {
-                img1Index.value++
-                progress.value = 0
-              }
-            }
-          )
-        } else {
-          progress.value = withTiming(currentAnim.value === "prev" ? 1 : 0)
-        }
-      })
-      .enabled(gestureEnabled)
+      const isAtStart = deltaX > 0 && currentIndex.value === 0;
+      const isAtEnd = deltaX < 0 && currentIndex.value === dataLength - 1;
 
-    const setImages = (img: any, index: number) => {
-      setViewImages((prev) => {
-        if (prev[index]) return prev
-        const next = [...prev]
-        next[index] = img
-        return next
-      })
-    }
-
-    const next = () => {
-      if (currentIndex.value === dataLength - 1) return
-
-      progress.value = withTiming(1, { duration: 800 }, (finished) => {
-        if (finished) {
-          currentIndex.value++
-        }
-
-        if (finished && img1Index.value + 1 !== dataLength - 1) {
-          img1Index.value++
-          progress.value = 0
-        }
-      })
-    }
-
-    const prev = () => {
-      if (currentIndex.value === 0) return
-
-      if (img1Index.value !== 0 && currentIndex.value !== dataLength - 1) {
-        progress.value = 1
-        img1Index.value--
+      if (isAtStart || isAtEnd) {
+        state.fail();
+        return;
       }
 
-      progress.value = withTiming(0, { duration: 800 }, () => {
-        if (currentIndex.value !== 0) {
-          currentIndex.value--
+      state.activate();
+    })
+    .onStart((e) => {
+      // Measure direction using current touch position vs initial start position
+      const isSwipingRight = e.x > startX.value;
+
+      if (isSwipingRight && currentIndex.value > 0) {
+        currentAnim.value = "prev";
+        img1Index.value = currentIndex.value - 1;
+        progress.value = 1; // Start fully curled for reverse peel
+      } else {
+        currentAnim.value = "next";
+        img1Index.value = currentIndex.value;
+        progress.value = 0; // Start uncurled
+      }
+
+      topFlag.value = e.y < height / 2 ? 0 : 1;
+    })
+    .onChange((e) => {
+      if (currentAnim.value === "prev") {
+        // Swiping right (positive drag from startX):
+        // Progress reduces from 1 down toward 0 as you unroll the page
+        const deltaX = e.x - startX.value;
+        const unrollProgress = 1 - deltaX / width;
+        progress.value = Math.max(0, Math.min(1, unrollProgress));
+      } else {
+        // Swiping left (negative drag from startX):
+        // Progress increases from 0 up toward 1
+        const deltaX = startX.value - e.x;
+        const curlProgress = deltaX / width;
+        progress.value = Math.max(0, Math.min(1, curlProgress));
+      }
+    })
+    .onEnd((e) => {
+      const deltaX = e.x - startX.value;
+      const passedThreshold = Math.abs(deltaX) > width / 3;
+
+      if (currentAnim.value === "prev") {
+        if (passedThreshold) {
+          // Complete backward flip
+          progress.value = withTiming(0, { duration: 250 }, (finished) => {
+            if (finished) {
+              currentIndex.value--;
+            }
+          });
+        } else {
+          // Cancel backward flip: re-curl back off-screen to 1 and restore index
+          progress.value = withTiming(1, { duration: 200 }, (finished) => {
+            if (finished) {
+              img1Index.value = currentIndex.value;
+              progress.value = 0;
+            }
+          });
         }
-      })
-    }
+      } else {
+        if (passedThreshold) {
+          // Complete forward flip
+          progress.value = withTiming(1, { duration: 250 }, (finished) => {
+            if (finished) {
+              currentIndex.value++;
+              img1Index.value = currentIndex.value;
+              progress.value = 0;
+            }
+          });
+        } else {
+          // Cancel forward flip
+          progress.value = withTiming(0, { duration: 200 });
+        }
+      }
+    })
+    .enabled(gestureEnabled);
 
-    useImperativeHandle(ref, () => ({ next, prev }), [next, prev])
+  // Store Captured Image Handlers
+  const handleSetImage = useCallback((img: SkImage, index: number) => {
+    setViewImages((prev) => {
+      if (prev[index]) return prev;
+      const next = [...prev];
+      next[index] = img;
+      return next;
+    });
+  }, []);
 
-    const isCapturing = (!images || images.length === 0) && viewImages.length < (data?.length ?? 0)
+  // Imperative Controller Methods
+  const next = useCallback(() => {
+    if (currentIndex.value === dataLength - 1) return;
 
-    return (
-      <GestureDetector gesture={gesture}>
-        <View style={{ width, height}}>
-          {isCapturing ? (
-            // Off-screen capture pass
-            data?.map((item, index) => (
-              <Item
-                key={index}
-                setImages={(img) => setImages(img, index)}
-              >
-                {renderPage ? (
-                  renderPage({ item, index })
-                ) : (
-                  <View style={styles.defaultPage} key={index}>
-                    <Text style={styles.defaultText}>
-                      {item.value}
-                    </Text>
-                  </View>
-                )}
-              </Item>
-            ))
-          ) : (
-            
-            // Shader pass after images are captured
-            <Canvas style={{ width, height:"100%"}}>
-              <Fill>
-                <Shader source={effect} uniforms={uniforms}>
-                  <ImageShader image={img1} fit="cover" width={width} height={height} />
-                  <ImageShader image={img2} fit="cover" width={width} height={height} />
-                </Shader>
-              </Fill>
-            </Canvas>
-          )}
-        </View>
-      </GestureDetector>
-    )
-  }
-)
+    progress.value = withTiming(1, { duration: 800 }, (finished) => {
+      if (finished) {
+        currentIndex.value++;
+      }
+      if (finished && img1Index.value + 1 !== dataLength - 1) {
+        img1Index.value++;
+        progress.value = 0;
+      }
+    });
+  }, [currentIndex, dataLength, img1Index, progress]);
+
+  const prev = useCallback(() => {
+    if (currentIndex.value <= 0) return;
+
+    currentAnim.value = "prev";
+    progress.value = 1;
+
+    progress.value = withTiming(0, { duration: 400 }, (finished) => {
+      if (finished) {
+        currentIndex.value--;
+        img1Index.value--;
+      }
+    });
+  }, [currentIndex, img1Index, progress, currentAnim]);
+
+  useImperativeHandle(ref, () => ({ next, prev }), [next, prev]);
+
+  const isCapturing =
+    (!images || images.length === 0) && viewImages.length < (data?.length ?? 0);
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <View style={styles.container}>
+        {isCapturing ? (
+          // Snapshot Capture Stage
+          data?.map((item, index) => (
+            <CaptureItem
+              key={index}
+              setImages={(img) => handleSetImage(img, index)}
+            >
+              {renderPage ? (
+                renderPage({ item, index })
+              ) : (
+                <View style={styles.defaultPage}>
+                  <Text style={styles.defaultText}>{item.value}</Text>
+                </View>
+              )}
+            </CaptureItem>
+          ))
+        ) : (
+          // Skia Shader Rendering Stage
+          <Canvas style={styles.canvas}>
+            <Fill>
+              <Shader source={shaderEffect} uniforms={uniforms}>
+                <ImageShader image={img1} fit="cover" width={width} height={height} />
+                <ImageShader image={img2} fit="cover" width={width} height={height} />
+              </Shader>
+            </Fill>
+          </Canvas>
+        )}
+      </View>
+    </GestureDetector>
+  );
+});
 
 export default PageCurl;
 
 const styles = StyleSheet.create({
+  container: {
+    width,
+    height,
+  },
+  captureContainer: {
+    width,
+    height,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  canvas: {
+    width,
+    height: "100%",
+  },
   defaultPage: {
     flex: 1,
-    backgroundColor: '#FAF8F5',
+    backgroundColor: "#FAF8F5",
     padding: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: "#333"
+    borderColor: "#333",
   },
   defaultText: {
     fontSize: 18,
     lineHeight: 30,
-    color: '#2C2C2C',
+    color: "#2C2C2C",
   },
-})
+});

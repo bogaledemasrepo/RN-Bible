@@ -1,30 +1,30 @@
-import { View } from "react-native";
+import { enableScreens } from 'react-native-screens';
 import { NavigationContainer } from "@react-navigation/native";
-import { createDrawerNavigator } from "@react-navigation/drawer";
-import { CustomDrawerContent } from "./components/custom-drawer-content";
-import { RootDrawerParamList } from "./types";
-// import AutoPaginatedReader from "./screens/PageScreen";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+
 import Sqlite from "./hooks/use-sqlite-context";
 import { AutoPaginatedReader } from "./screens/PageScreen";
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-const Drawer = createDrawerNavigator<RootDrawerParamList>();
+enableScreens();
 
-// Prevent splash screen from hiding until we are ready
-// SplashScreen.preventAutoHideAsync();
+export type RootStackParamList = {
+  BookReader: {
+    bookId: number;
+    bookName: string;
+    chapterNumber: number;
+  };
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
-
   return (
-    <View style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <Sqlite>
         <NavigationContainer>
-          <Drawer.Navigator
-            drawerContent={(props) => <CustomDrawerContent {...props} />}
-            screenOptions={{
-              drawerStyle: { width: '80%' },
-            }}
-          >
-            <Drawer.Screen
+          <Stack.Navigator>
+            <Stack.Screen
               name="BookReader"
               component={AutoPaginatedReader}
               initialParams={{
@@ -33,24 +33,12 @@ export default function App() {
                 chapterNumber: 1,
               }}
               options={{
-                headerShown: false
+                headerShown: false,
               }}
             />
-          </Drawer.Navigator>
+          </Stack.Navigator>
         </NavigationContainer>
-        {/* <AppStatusBar style="dark" /> */}
       </Sqlite>
-    </View>
+    </GestureHandlerRootView>
   );
 }
-
-// function AppStatusBar({ style }: { style: "auto" | "inverted" | "light" | "dark" }) {
-//   return (
-//     <View
-//       style={{
-//         height: 0,
-//         backgroundColor: style === "light" ? "#fff" : "#000",
-//       }}
-//     />
-//   );
-// } 

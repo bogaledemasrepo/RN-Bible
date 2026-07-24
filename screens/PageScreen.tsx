@@ -1,110 +1,122 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   Dimensions,
   LayoutChangeEvent,
+  ActivityIndicator,
 } from 'react-native';
-import PageCurl from '../components/page';
-import { PageCurlHandle } from '../types';
 import { useSQLiteContext } from 'expo-sqlite';
 
+import PageCurl from '../components/page';
+import { PageCurlHandle } from '../types';
+import { loadChapterContent } from '../lib/services';
+
+// ==========================================
+// Constants & Layout Config
+// ==========================================
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const FONT_SIZE = 17;
 const LINE_HEIGHT = 28;
-// Average characters per line for Fidel script at FONT_SIZE=17 on standard mobile screens
+// Estimated characters per line for Fidel script at FONT_SIZE = 17
 const CHARS_PER_LINE = Math.floor((SCREEN_WIDTH - 48) / (FONT_SIZE * 0.6));
 
+// ==========================================
+// Helper Functions
+// ==========================================
+function paginateText(content: string, availableHeight: number): string[] {
+  // Account for header, footer & padding inside usable screen space
+  const usableHeight = availableHeight - 120;
+  const maxLinesPerPage = Math.floor(usableHeight / LINE_HEIGHT);
+
+  const verses = content.split('\n').filter((line) => line.trim().length > 0);
+  const paginatedPages: string[] = [];
+
+  let currentChunk: string[] = [];
+  let currentLineCount = 0;
+
+  verses.forEach((verse) => {
+    // Estimate lines taken by this verse when wrapping
+    const estimatedLines = Math.max(1, Math.ceil(verse.length / CHARS_PER_LINE));
+
+    if (currentLineCount + estimatedLines > maxLinesPerPage) {
+      paginatedPages.push(currentChunk.join('\n'));
+      currentChunk = [verse];
+      currentLineCount = estimatedLines;
+    } else {
+      currentChunk.push(verse);
+      currentLineCount += estimatedLines;
+    }
+  });
+
+  if (currentChunk.length > 0) {
+    paginatedPages.push(currentChunk.join('\n\n'));
+  }
+
+  return paginatedPages;
+}
+
+// ==========================================
+// Main Component
+// ==========================================
 export function AutoPaginatedReader({ route }: any) {
+  const db = useSQLiteContext();
+  const curlRef = useRef<PageCurlHandle>(null);
+  
+
+  const [chapterContent, setChapterContent] = useState<string>('');
   const [pages, setPages] = useState<string[]>([]);
   const [isMeasuring, setIsMeasuring] = useState(true);
-  const curlRef = useRef<PageCurlHandle>(null);
 
-  const db = useSQLiteContext();
-  const [chapterContent, setChapterContent] = useState<string>('');
+  const {
+    bookId = 1,
+    chapterNumber = 2,
+    bookName = 'መጽሐፍ ቅዱስ',
+  } = route?.params || {};
 
-  const { bookId = 1, chapterNumber = 2, bookName = 'መጽሐፍ ቅዱስ' } = route?.params || {};
-
-  // Fetch SQLite content dynamically
+  // 1. Fetch Chapter Content from SQLite
   useEffect(() => {
-    async function loadData() {
-      try {
-        const result = await db.getAllAsync<{ verse_text: string }>(
-          `SELECT v.verse_text
-            FROM books b
-            JOIN chapters c ON b.book_id = c.book_id
-            JOIN verses v ON c.chapter_id = v.chapter_id
-            WHERE b.book_id = ? 
-              AND c.chapter_number = ?
-            ORDER BY v.verse_number ASC;`,
-          [bookId, chapterNumber]
-        );
-        if (result) {
-          setChapterContent(result.map((row , index)=> `${index + 1}`+'. '+row.verse_text).join('\n'));
-        }
-      } catch (err) {
-        console.error("Error reading database:", err);
-      }
-    }
-    loadData();
-  }, [chapterNumber]);
+    setIsMeasuring(true);
+    loadChapterContent(db, bookId, chapterNumber).then(res => setChapterContent(res || '')).catch((err) => {
+      console.error('Failed to load chapter content:', err);
+      setChapterContent('');
+    }).finally(() => setIsMeasuring(false));
+  }, [db, bookId, chapterNumber]);
 
-  // Accurate Auto-Paging Algorithm
-  const handleLayout = (event: LayoutChangeEvent) => {
-    if (!chapterContent) return;
+  // 2. Measure Height and Paginate Content
+  const handleLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      if (!chapterContent) return;
 
-    const { height } = event.nativeEvent.layout;
+      const { height } = event.nativeEvent.layout;
+      const paginatedPages = paginateText(chapterContent, height);
 
-    // Space reserved for margins, padding & header title
-    const usableHeight = height - 120;
-    const maxLinesPerPage = Math.floor(usableHeight / LINE_HEIGHT);
+      setPages(paginatedPages);
+      setIsMeasuring(false);
+    },
+    [chapterContent]
+  );
 
-    const verses = chapterContent.split('\n').filter(line => line.trim().length > 0);
-    const paginatedPages: string[] = [];
-
-    let currentChunk: string[] = [];
-    let currentLineCount = 0;
-
-    verses.forEach((verse) => {
-      // Calculate how many lines this verse takes when wrapped on device screen
-      const estimatedLines = Math.max(1, Math.ceil(verse.length / CHARS_PER_LINE));
-
-      if (currentLineCount + estimatedLines > maxLinesPerPage) {
-        // Push current page and start a new page
-        paginatedPages.push(currentChunk.join('\n'));
-        currentChunk = [verse];
-        currentLineCount = estimatedLines;
-      } else {
-        currentChunk.push(verse);
-        currentLineCount += estimatedLines;
-      }
-    });
-
-    if (currentChunk.length > 0) {
-      paginatedPages.push(currentChunk.join('\n\n'));
-    }
-    setPages(paginatedPages);
-    setIsMeasuring(false);
-  };
-
+  // Loading Screen while database or layout measurements execute
   if (isMeasuring || !chapterContent) {
     return (
-      <View style={styles.measuringContainer}>
-        <Text
-          key={chapterContent} // 👈 Forces text re-measurement when text updates
-          onLayout={(e) => {
-            const { height, width } = e.nativeEvent.layout;
-            handleLayout(e);
-          }}
-        >
-          {chapterContent}
-        </Text>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#6366f1" />
+        <Text style={styles.loadingText}>ገጾችን በማዘጋጀት ላይ...</Text>
+
+        {/* Hidden View used exclusively for frame layout measurement */}
+        <View style={styles.hiddenMeasuringView} onLayout={handleLayout}>
+          <Text style={styles.measuringText} key={chapterContent}>
+            {chapterContent}
+          </Text>
+        </View>
       </View>
     );
   }
-
+  // console.log("Chapter content loaded. Total pages:", pages.length);
+  // 3. Main Reader View
   return (
     <View style={styles.container}>
       <PageCurl
@@ -125,12 +137,15 @@ export function AutoPaginatedReader({ route }: any) {
   );
 }
 
+// ==========================================
+// Styles
+// ==========================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F5',
   },
-  measuringContainer: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -140,6 +155,19 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: '#64748b',
+  },
+  hiddenMeasuringView: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0,
+    pointerEvents: 'none',
+  },
+  measuringText: {
+    fontSize: FONT_SIZE,
+    lineHeight: LINE_HEIGHT,
   },
   pageCard: {
     width: SCREEN_WIDTH,
