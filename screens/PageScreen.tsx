@@ -10,101 +10,98 @@ import {
 import PageCurl from '../components/page';
 import { Book, PageCurlHandle } from '../types';
 import { useSQLiteContext } from 'expo-sqlite';
-// import PageCurl, { PageCurlHandle } from './PageCurl';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Typography configuration
 const FONT_SIZE = 17;
 const LINE_HEIGHT = 28;
+// Average characters per line for Fidel script at FONT_SIZE=17 on standard mobile screens
+const CHARS_PER_LINE = Math.floor((SCREEN_WIDTH - 48) / (FONT_SIZE * 0.6)); 
 
-interface AutoPaginatedReaderProps {
-  fullText: string;
-  title?: string;
-}
-const title="መዝሙረ ዳዊት"
-const LONG_BIBLE_TEXT = `12. እስራኤልም ሰምቶኝ ቢሆን፥ እግዚአብሔር እንዲህ ይላል፡
-13. በጠላቶቻቸው ላይ እጄን በጣልኩ፥ ጠላቶቻቸውን ባዋረድኩ ነበር።
-14. የእግዚአብሔር ጠላቶች ይዋሹታል፥ ጊዜያቸውም እስከ ዘላለም ይሆናል።
-15. ከሰሜን ስንዴ ያበላቸዋል፥ ከድንጋይም ማር ያጠግባቸዋል።
-16. ለረዳታችን ለእግዚአብሔር እልል በሉ፥ ለያዕቆብ አምላክ እልል በሉ፤
-17. መዝሙር አንሡ ከበሮንም ስጡ፥ ደስ የሚያሰኘውን በገና ከበገና ጋር።
-18. በመባቻ በቀን መለከትን ነፉ፥ በከበረ በዓላችን ቀን።
-19. ለእስራኤል ሥርዓት ነውና፥ ለያዕቆብም አምላክ ፍርድ።
-20. ከግብፅ ምድር በወጣ ጊዜ ለዮሴፍ ምስክር አደረገው፤
-21. ያልተረዳሁትን ቋንቋ ሰማሁ፡- ጫንቃውን ከሸክም አራቅሁ፥ እጆቹም ከቅርጫት ወጡ።
-22. በመከራ ጠራኸኝ አዳንሁህም፤ በዐውሎ ነፋስ መሸሸጊያ መለስሁልህ፤ በክርክር ውኃ ዘንድ ፈተንሁህ።
-23. በጠላቶቻቸው ላይ እጄን በጣልኩ፥ ጠላቶቻቸውን ባዋረድኩ ነበር።
-24. የእግዚአብሔር ጠላቶች ይዋሹታል፥ ጊዜያቸውም እስከ ዘላለም ይሆናል።
-25. ከሰሜን ስንዴ ያበላቸዋል፥ ከድንጋይም ማር ያጠግባቸዋል።
-26. ለረዳታችን ለእግዚአብሔር እልል በሉ፥ ለያዕቆብ አምላክ እልል በሉ፤
-27. መዝሙር አንሡ ከበሮንም ስጡ፥ ደስ የሚያሰኘውን በገና ከበገና ጋር።
-28. በመባቻ በቀን መለከትን ነፉ፥ በከበረ በዓላችን ቀን።
-29. ለእስራኤል ሥርዓት ነውና፥ ለያዕቆብም አምላክ ፍርድ።
-30. ከግብፅ ምድር በወጣ ጊዜ ለዮሴፍ ምስክር አደረገው፤
-31. ያልተረዳሁትን ቋንቋ ሰማሁ፡- ጫንቃውን ከሸክም አራቅሁ፥ እጆቹም ከቅርጫት ወጡ።
-32. በመከራ ጠራኸኝ አዳንሁህም፤ በዐውሎ ነፋስ መሸሸጊያ መለስሁልህ፤ በክርክር ውኃ ዘንድ ፈተንሁህ።
-33. በጠላቶቻቸው ላይ እጄን በጣልኩ፥ ጠላቶቻቸውን ባዋረድኩ ነበር።
-34. የእግዚአብሔር ጠላቶች ይዋሹታል፥ ጊዜያቸውም እስከ ዘላለም ይሆናል።
-35. ከሰሜን ስንዴ ያበላቸዋል፥ ከድንጋይም ማር ያጠግባቸዋል።
-36. ለረዳታችን ለእግዚአብሔር እልል በሉ፥ ለያዕቆብ አምላክ እልል በሉ፤
-37. መዝሙር አንሡ ከበሮንም ስጡ፥ ደስ የሚያሰኘውን በገና ከበገና ጋር።
-38. በመባቻ በቀን መለከትን ነፉ፥ በከበረ በዓላችን ቀን።
-39. ለእስራኤል ሥርዓት ነውና፥ ለያዕቆብም አምላክ ፍርድ።
-40. ከግብፅ ምድር በወጣ ጊዜ ለዮሴፍ ምስክር አደረገው፤
-41. ያልተረዳሁትን ቋንቋ ሰማሁ፡- ጫንቃውን ከሸክም አራቅሁ፥ እጆቹም ከቅርጫት ወጡ።
-42. በመከራ ጠራኸኝ አዳንሁህም፤ በዐውሎ ነፋስ መሸሸጊያ መለስሁልህ፤ በክርክር ውኃ ዘንድ ፈተንሁህ።`;
-
-export function AutoPaginatedReader() {
+export function AutoPaginatedReader({ route }: any) {
   const [pages, setPages] = useState<string[]>([]);
   const [isMeasuring, setIsMeasuring] = useState(true);
   const curlRef = useRef<PageCurlHandle>(null);
 
   const db = useSQLiteContext();
-  const [books, setBooks] = useState<Book[]>([]);
+  const [chapterContent, setChapterContent] = useState<string>('');
 
-  // Measure container height to calculate lines per page
+  const { bookId = 1, chapterNumber = 1, bookName = 'መጽሐፍ ቅዱስ' } = route?.params || {};
+
+  // Fetch SQLite content dynamically
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const result = await db.getFirstAsync<{ book_name: string; chapter_number: number; verse_number: number; verse_text: string }>(
+          `SELECT 
+                b.name_am AS book_name,
+                c.chapter_number,
+                v.verse_number,
+                v.verse_text
+            FROM books b
+            JOIN chapters c ON b.book_id = c.book_id
+            JOIN verses v ON c.chapter_id = v.chapter_id
+            WHERE b.book_id = ? 
+              AND c.chapter_number = ?
+            ORDER BY v.verse_number ASC;`,
+          [bookId, chapterNumber]
+        );
+        console.log("Fetched chapter content:", result);
+        if (result?.verse_text) {
+          console.log("Setting chapter content for bookId:", bookId, "chapterNumber:", chapterNumber, "content length:", result.verse_text);
+          setChapterContent(result.verse_text);
+        }
+      } catch (err) {
+        console.error("Error reading database:", err);
+      }
+    }
+    loadData();
+  }, [chapterNumber]);
+
+  // Accurate Auto-Paging Algorithm
   const handleLayout = (event: LayoutChangeEvent) => {
+    if (!chapterContent) return;
+
     const { height } = event.nativeEvent.layout;
+    
+    // Space reserved for margins, padding & header title
+    const usableHeight = height - 120; 
+    const maxLinesPerPage = Math.floor(usableHeight / LINE_HEIGHT);
 
-    // Account for padding and header space
-    const availableHeight = height - 100; 
-    const linesPerPage = Math.floor(availableHeight / LINE_HEIGHT);
-
-    // Split text by lines and group into pages
-    const lines = LONG_BIBLE_TEXT.split('\n');
-    const paginatedChunks: string[] = [];
+    const verses = chapterContent.split('\n').filter(line => line.trim().length > 0);
+    const paginatedPages: string[] = [];
+    
     let currentChunk: string[] = [];
+    let currentLineCount = 0;
 
-    lines.forEach((line, index) => {
-      currentChunk.push(line);
-      if (currentChunk.length >= linesPerPage) {
-        paginatedChunks.push(currentChunk.join('\n'));
-        currentChunk = [];
+    verses.forEach((verse) => {
+      // Calculate how many lines this verse takes when wrapped on device screen
+      const estimatedLines = Math.max(1, Math.ceil(verse.length / CHARS_PER_LINE));
+
+      if (currentLineCount + estimatedLines > maxLinesPerPage) {
+        // Push current page and start a new page
+        paginatedPages.push(currentChunk.join('\n\n'));
+        currentChunk = [verse];
+        currentLineCount = estimatedLines;
+      } else {
+        currentChunk.push(verse);
+        currentLineCount += estimatedLines;
       }
     });
 
     if (currentChunk.length > 0) {
-      paginatedChunks.push(currentChunk.join('\n'));
+      paginatedPages.push(currentChunk.join('\n\n'));
     }
 
-    setPages(paginatedChunks);
+    setPages(paginatedPages);
     setIsMeasuring(false);
   };
 
-  useEffect(() => {
-    async function setup() {
-      const result = await db.getAllAsync<Book>('SELECT * FROM books');
-      setBooks(result);
-    }
-    setup();
-  }, []);
-
-  if (isMeasuring) {
+  if (isMeasuring || !chapterContent) {
     return (
       <View style={styles.measuringContainer} onLayout={handleLayout}>
-        <ActivityIndicator size="large" color="#8B0000" />
-        <Text style={styles.loadingText}>Loading pages...</Text>
+        <ActivityIndicator size="large" color="#6366f1" />
+        <Text style={styles.loadingText}>ገጾችን በማዘጋጀት ላይ...</Text>
       </View>
     );
   }
@@ -115,12 +112,12 @@ export function AutoPaginatedReader() {
         ref={curlRef}
         data={pages}
         gestureEnabled={true}
-        renderPage={({ item, index }) =>(
+        renderPage={({ item, index }) => (
           <View style={styles.pageCard} key={index}>
-            {title && <Text style={styles.chapterTitle}>{title}</Text>}
+            <Text style={styles.chapterTitle}>{bookName}</Text>
             <Text style={styles.pageText}>{item}</Text>
             <Text style={styles.pageFooter}>
-              {index + 1} / {pages.length}
+              ገጽ {index + 1} / {pages.length}
             </Text>
           </View>
         )}
@@ -132,6 +129,7 @@ export function AutoPaginatedReader() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FAF8F5',
   },
   measuringContainer: {
     flex: 1,
@@ -142,32 +140,33 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#666',
+    color: '#64748b',
   },
   pageCard: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
     backgroundColor: '#FAF8F5',
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingTop: 48,
+    paddingBottom: 24,
   },
   chapterTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 16,
-    color: '#2C2C2C',
+    color: '#1e293b',
   },
   pageText: {
     flex: 1,
     fontSize: FONT_SIZE,
     lineHeight: LINE_HEIGHT,
-    color: '#1A1A1A',
+    color: '#1e293b',
   },
   pageFooter: {
     textAlign: 'center',
     fontSize: 12,
-    color: '#888',
+    color: '#94a3b8',
     marginTop: 8,
   },
 });
