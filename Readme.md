@@ -1,6 +1,6 @@
 # EOTC 81-Book Bible App
 
-A high-performance, offline-first mobile application for the **Ethiopian Orthodox Tewahedo Church (EOTC) 81-Book Canon**, featuring a realistic, custom 3D page-curl reading interface powered by React Native, Skia, and GLSL shaders.
+A high-performance, fully offline mobile application for the **Ethiopian Orthodox Tewahedo Church (EOTC) 81-Book Canon**, featuring a realistic, custom 3D page-curl reading interface powered by React Native, Skia, and GLSL shaders.
 
 ---
 
