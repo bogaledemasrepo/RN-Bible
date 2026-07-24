@@ -23,6 +23,7 @@ import {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import { runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { ItemProps, PageCurlHandle, RenderPageProps } from "../types";
@@ -33,8 +34,11 @@ const { width, height } = Dimensions.get("screen");
 type Props = {
   images?: any[];
   data?: any[];
+  onReachStart?: () => void; // Triggered when swiping back on page 0
+  onReachEnd?: () => void;   // Triggered when swiping forward on last page
   renderPage?: (props: RenderPageProps) => React.ReactNode;
   gestureEnabled?: boolean;
+  chapterTitle?: string;
 };
 
 // ==========================================
@@ -77,7 +81,7 @@ function CaptureItem({ children, setImages }: ItemProps) {
 // Main Component: PageCurl Shader View
 // ==========================================
 const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
-  { images, data, renderPage, gestureEnabled = true },
+  { images, data, renderPage, gestureEnabled = true, onReachEnd, onReachStart, chapterTitle }: Props,
   ref
 ) {
   const dataLength = images?.length ?? data?.length ?? 0;
@@ -150,19 +154,41 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
       state.activate();
     })
     .onStart((e) => {
-      // Measure direction using current touch position vs initial start position
+      console.log("Gesture Start:", e.x, e.y);
+
       const isSwipingRight = e.x > startX.value;
 
-      if (isSwipingRight && currentIndex.value > 0) {
+      if (isSwipingRight) {
+        // 1. BACKWARD BOUNDARY CHECK
+
+        if (currentIndex.value === 0) {
+          if (onReachStart) {
+            console.log("Reached start of chapter. Loading previous chapter...");
+            runOnJS(onReachStart)(); // Call prev chapter handler safely
+          }
+          return;
+        }
+
         currentAnim.value = "prev";
         img1Index.value = currentIndex.value - 1;
-        progress.value = 1; // Start fully curled for reverse peel
+        progress.value = 1;
+
       } else {
+        // 2. FORWARD BOUNDARY CHECK
+        if (currentIndex.value === dataLength - 1) {
+          if (onReachEnd) {
+            console.log("Reached end of chapter. Loading next chapter...");
+            runOnJS(onReachEnd)(); // Call next chapter handler safely
+          }
+          return;
+        }
+
         currentAnim.value = "next";
         img1Index.value = currentIndex.value;
-        progress.value = 0; // Start uncurled
-      }
+        progress.value = 0;
 
+      }
+      console.log("Current Index:", currentIndex.value);
       topFlag.value = e.y < height / 2 ? 0 : 1;
     })
     .onChange((e) => {

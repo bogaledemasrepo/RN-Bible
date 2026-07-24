@@ -4,14 +4,13 @@ import {
   View,
   Text,
   Dimensions,
-  LayoutChangeEvent,
   ActivityIndicator,
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import PageCurl from '../components/page';
 import { PageCurlHandle } from '../types';
-import { loadChapterContent } from '../lib/services';
+import { paginateText } from '../lib/paginateText';
 
 // ==========================================
 // Constants & Layout Config
@@ -24,105 +23,87 @@ const LINE_HEIGHT = 28;
 const CHARS_PER_LINE = Math.floor((SCREEN_WIDTH - 48) / (FONT_SIZE * 0.6));
 
 // ==========================================
-// Helper Functions
-// ==========================================
-function paginateText(content: string, availableHeight: number): string[] {
-  // Account for header, footer & padding inside usable screen space
-  const usableHeight = availableHeight - 120;
-  const maxLinesPerPage = Math.floor(usableHeight / LINE_HEIGHT);
-
-  const verses = content.split('\n').filter((line) => line.trim().length > 0);
-  const paginatedPages: string[] = [];
-
-  let currentChunk: string[] = [];
-  let currentLineCount = 0;
-
-  verses.forEach((verse) => {
-    // Estimate lines taken by this verse when wrapping
-    const estimatedLines = Math.max(1, Math.ceil(verse.length / CHARS_PER_LINE));
-
-    if (currentLineCount + estimatedLines > maxLinesPerPage) {
-      paginatedPages.push(currentChunk.join('\n'));
-      currentChunk = [verse];
-      currentLineCount = estimatedLines;
-    } else {
-      currentChunk.push(verse);
-      currentLineCount += estimatedLines;
-    }
-  });
-
-  if (currentChunk.length > 0) {
-    paginatedPages.push(currentChunk.join('\n\n'));
-  }
-
-  return paginatedPages;
-}
-
-// ==========================================
 // Main Component
 // ==========================================
 export function AutoPaginatedReader({ route }: any) {
+
   const db = useSQLiteContext();
   const curlRef = useRef<PageCurlHandle>(null);
-  
-
   const [chapterContent, setChapterContent] = useState<string>('');
   const [pages, setPages] = useState<string[]>([]);
-  const [isMeasuring, setIsMeasuring] = useState(true);
+  const { bookId, bookName, initialChapter = 1 } = route.params || {bookId: 1, bookName: "ኦሪት ዘፍጥረት", initialChapter: 1};
+  const [chapter, setChapter] = useState<number>(initialChapter);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [initialPageIndex, setInitialPageIndex] = useState<number>(0);
 
-  const {
-    bookId = 1,
-    chapterNumber = 2,
-    bookName = 'መጽሐፍ ቅዱስ',
-  } = route?.params || {};
 
-  // 1. Fetch Chapter Content from SQLite
+  // 2. Fetch and paginate text whenever 'chapter' changes
+  const loadChapter = useCallback(async (targetChapter: number, startAtEnd = false) => {
+    setLoading(true);
+    try {
+      // Query the database for chapter content
+      const result = await db.getAllAsync<{ verse_text: string }>(
+          `SELECT v.verse_text
+           FROM books b
+           JOIN chapters c ON b.book_id = c.book_id
+           JOIN verses v ON c.chapter_id = v.chapter_id
+           WHERE b.book_id = ? AND c.chapter_number = ?
+           ORDER BY v.verse_number ASC;`,
+          [bookId, targetChapter]
+        );
+
+      if (result && result.length > 0) {
+        // Paginate the raw Amharic text
+        const calculatedPages = paginateText(result.map((r) => r.verse_text).join('\n'), SCREEN_HEIGHT - 72); // Adjust for padding and header/footer
+        
+        setPages(calculatedPages);
+        setChapter(targetChapter);
+
+        // If swiping back into a previous chapter, start on its final page
+        setInitialPageIndex(startAtEnd ? calculatedPages.length - 1 : 0);
+      }
+    } catch (error) {
+      console.error("Error loading chapter:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [db, bookId]);
+
   useEffect(() => {
-    setIsMeasuring(true);
-    loadChapterContent(db, bookId, chapterNumber).then(res => setChapterContent(res || '')).catch((err) => {
-      console.error('Failed to load chapter content:', err);
-      setChapterContent('');
-    }).finally(() => setIsMeasuring(false));
-  }, [db, bookId, chapterNumber]);
+    loadChapter(chapter);
+  }, []);
 
-  // 2. Measure Height and Paginate Content
-  const handleLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      if (!chapterContent) return;
+  // 3. Callback Handlers
+  const handleNextChapter = () => {
+    console.log("Reached end of chapter. Loading next chapter...");
+    loadChapter(chapter + 1, false); // Load next, start on page 0
+  };
 
-      const { height } = event.nativeEvent.layout;
-      const paginatedPages = paginateText(chapterContent, height);
+  const handlePrevChapter = () => {
+    console.log("Reached start of chapter. Loading previous chapter...");
+    if (chapter > 1) {
+      loadChapter(chapter - 1, true); // Load prev, start on last page
+    }
+  };
 
-      setPages(paginatedPages);
-      setIsMeasuring(false);
-    },
-    [chapterContent]
-  );
-
-  // Loading Screen while database or layout measurements execute
-  if (isMeasuring || !chapterContent) {
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6366f1" />
-        <Text style={styles.loadingText}>ገጾችን በማዘጋጀት ላይ...</Text>
-
-        {/* Hidden View used exclusively for frame layout measurement */}
-        <View style={styles.hiddenMeasuringView} onLayout={handleLayout}>
-          <Text style={styles.measuringText} key={chapterContent}>
-            {chapterContent}
-          </Text>
-        </View>
+        <ActivityIndicator size="large" color="#8b0000" />
+        <Text style={styles.loadingText}>ምዕራፍ {chapter} በመጫን ላይ...</Text>
       </View>
     );
   }
-  // console.log("Chapter content loaded. Total pages:", pages.length);
-  // 3. Main Reader View
+
   return (
     <View style={styles.container}>
       <PageCurl
         ref={curlRef}
         data={pages}
+        onReachEnd={handleNextChapter}
+        onReachStart={handlePrevChapter}
         gestureEnabled={true}
+        chapterTitle={`${bookName || 'ኦሪት ዘፍጥረት'} - ምዕራፍ ${chapter}`}
         renderPage={({ item, index }) => (
           <View style={styles.pageCard} key={index}>
             <Text style={styles.chapterTitle}>{bookName}</Text>
