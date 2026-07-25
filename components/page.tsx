@@ -1,6 +1,7 @@
 import React, {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -20,31 +21,36 @@ import {
 import {
   useDerivedValue,
   useSharedValue,
-  withSpring,
   withTiming,
+  runOnJS,
 } from "react-native-reanimated";
-import { runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
-import { ItemProps, PageCurlHandle, RenderPageProps } from "../types";
+import { PageCurlHandle, RenderPageProps } from "../types";
 import { pageCurlShader } from "../constants";
 
-const { width, height } = Dimensions.get("screen");
+const { width, height } = Dimensions.get("window");
 
 type Props = {
   images?: any[];
   data?: any[];
-  onReachStart?: () => void; // Triggered when swiping back on page 0
-  onReachEnd?: () => void;   // Triggered when swiping forward on last page
+  initialIndex?: number;
+  onReachStart?: () => void;
+  onReachEnd?: () => void;
   renderPage?: (props: RenderPageProps) => React.ReactNode;
   gestureEnabled?: boolean;
-  chapterTitle?: string;
 };
 
 // ==========================================
-// Sub-Component: Off-Screen View Snapshot Item
+// Sub-Component: Off-Screen View Snapshot
 // ==========================================
-function CaptureItem({ children, setImages }: ItemProps) {
+function CaptureItem({
+  children,
+  onCaptured,
+}: {
+  children: React.ReactNode;
+  onCaptured: (img: SkImage) => void;
+}) {
   const viewRef = useRef<View>(null);
   const isCaptured = useRef(false);
 
@@ -52,13 +58,15 @@ function CaptureItem({ children, setImages }: ItemProps) {
     if (isCaptured.current) return;
     isCaptured.current = true;
 
-    // Brief delay to allow views to settle before snapshot
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Small delay to allow font glyphs & views to lay out cleanly
+    await new Promise((resolve) => setTimeout(resolve, 60));
 
     try {
-      const image = await makeImageFromView(viewRef as any);
-      if (image) {
-        setImages(image);
+      if (viewRef.current) {
+        const image = await makeImageFromView(viewRef as any);
+        if (image) {
+          onCaptured(image);
+        }
       }
     } catch (e) {
       console.warn("Snapshot capture failed:", e);
@@ -78,33 +86,57 @@ function CaptureItem({ children, setImages }: ItemProps) {
 }
 
 // ==========================================
-// Main Component: PageCurl Shader View
+// Main Component: PageCurl Shader Engine
 // ==========================================
 const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
-  { images, data, renderPage, gestureEnabled = true, onReachEnd, onReachStart, chapterTitle }: Props,
+  {
+    images,
+    data,
+    initialIndex = 0,
+    renderPage,
+    gestureEnabled = true,
+    onReachEnd,
+    onReachStart,
+  }: Props,
   ref
 ) {
   const dataLength = images?.length ?? data?.length ?? 0;
 
-  // Skia Resources & State
+  // Static loaded image references (if images prop is supplied)
   const loadedImages = images?.map((item: any) => useImage(item));
-  const [viewImages, setViewImages] = useState<SkImage[]>([]);
 
-  // Animation Shared Values
-  const img1Index = useSharedValue(0);
+  // Dynamic Skia Images array (index -> SkImage)
+  const [viewImages, setViewImages] = useState<Record<number, SkImage>>({});
+  const [activeJSIndex, setActiveJSIndex] = useState<number>(initialIndex);
+
+  // Reanimated Animation Shared Values
+  const currentIndex = useSharedValue(initialIndex);
+  const img1Index = useSharedValue(initialIndex);
   const topFlag = useSharedValue(0);
   const currentAnim = useSharedValue<"next" | "prev">("next");
-  const currentIndex = useSharedValue(0);
   const startX = useSharedValue(0);
   const progress = useSharedValue(0);
 
-  // Compile Skia Shader
+  // Sync state when dataset or initial index changes
+  useEffect(() => {
+    setViewImages({});
+    currentIndex.value = initialIndex;
+    img1Index.value = initialIndex;
+    setActiveJSIndex(initialIndex);
+    progress.value = 0;
+  }, [data, images, initialIndex]);
+
+  // Sync Reanimated Index back to JS for Windowing
+  const updateJSIndex = useCallback((idx: number) => {
+    setActiveJSIndex(idx);
+  }, []);
+
+  // Shader Setup
   const shaderEffect = useMemo(
     () => Skia.RuntimeEffect.Make(pageCurlShader)!,
     []
   );
 
-  // Shader Uniforms
   const uniforms = useDerivedValue(
     () => ({
       resolution: [width, height] as [number, number],
@@ -114,71 +146,66 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     [progress, topFlag]
   );
 
-  // ==========================================
-  // Texture Selection for Forward & Backward
-  // ==========================================
+  // Active Textures (Subscribed directly by Skia ImageShader without .value reads in render)
+  // Active Textures with Zero-Flicker Native Thread Fallback
   const img1 = useDerivedValue(() => {
     const idx = img1Index.value;
-    return loadedImages?.[idx] || viewImages[idx];
+    const currentSkImage = loadedImages?.[idx] || viewImages[idx];
+    return currentSkImage ?? null;
   }, [loadedImages, viewImages, img1Index]);
 
   const img2 = useDerivedValue(() => {
-    // When swiping backward, show the previous index underneath
-    const idx = currentAnim.value === "prev" ? img1Index.value - 1 : img1Index.value + 1;
-    return loadedImages?.[idx] || viewImages[idx];
-  }, [loadedImages, viewImages, img1Index, currentAnim]);
+    const targetIdx =
+      currentAnim.value === "prev" ? img1Index.value - 1 : img1Index.value + 1;
 
-  // ==========================================
-  // Pan Gesture Update
-  // ==========================================
+    const targetSkImage = loadedImages?.[targetIdx] || viewImages[targetIdx];
+
+    // If target texture is null or still encoding, seamlessly hold img1's texture value
+    if (!targetSkImage) {
+      return img1.value;
+    }
+
+    return targetSkImage;
+  }, [loadedImages, viewImages, img1Index, currentAnim, img1]);
+
+  // Store captured view image
+  const handleSetImage = useCallback((img: SkImage, index: number) => {
+    setViewImages((prev) => {
+      if (prev[index]) return prev;
+      return { ...prev, [index]: img };
+    });
+  }, []);
+
+  // Gesture Controls
   const gesture = Gesture.Pan()
     .manualActivation(true)
     .onTouchesDown((e) => {
       startX.value = e.allTouches[0].x;
     })
     .onTouchesMove((e, state) => {
-      const currentX = e.allTouches[0].x;
-      const deltaX = currentX - startX.value;
-
-      // Must move at least 10px to determine direction reliably
-      if (Math.abs(deltaX) < 10) return;
-
-      const isAtStart = deltaX > 0 && currentIndex.value === 0;
-      const isAtEnd = deltaX < 0 && currentIndex.value === dataLength - 1;
-
-      if (isAtStart || isAtEnd) {
-        state.fail();
-        return;
+      const deltaX = e.allTouches[0].x - startX.value;
+      if (Math.abs(deltaX) >= 10) {
+        state.activate();
       }
-
-      state.activate();
     })
     .onStart((e) => {
-      console.log("Gesture Start:", e.x, e.y);
-
       const isSwipingRight = e.x > startX.value;
 
       if (isSwipingRight) {
-        // 1. BACKWARD BOUNDARY CHECK
-
         if (currentIndex.value === 0) {
           if (onReachStart) {
-            console.log("Reached start of chapter. Loading previous chapter...");
-            runOnJS(onReachStart)(); // Call prev chapter handler safely
+            runOnJS(onReachStart)();
           }
           return;
         }
 
         currentAnim.value = "prev";
-        img1Index.value = currentIndex.value - 1;
+        img1Index.value = currentIndex.value;
         progress.value = 1;
-
       } else {
-        // 2. FORWARD BOUNDARY CHECK
-        if (currentIndex.value === dataLength - 1) {
+        if (currentIndex.value >= dataLength - 1) {
           if (onReachEnd) {
-            console.log("Reached end of chapter. Loading next chapter...");
-            runOnJS(onReachEnd)(); // Call next chapter handler safely
+            runOnJS(onReachEnd)();
           }
           return;
         }
@@ -186,21 +213,16 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         currentAnim.value = "next";
         img1Index.value = currentIndex.value;
         progress.value = 0;
-
       }
-      console.log("Current Index:", currentIndex.value);
+
       topFlag.value = e.y < height / 2 ? 0 : 1;
     })
     .onChange((e) => {
       if (currentAnim.value === "prev") {
-        // Swiping right (positive drag from startX):
-        // Progress reduces from 1 down toward 0 as you unroll the page
         const deltaX = e.x - startX.value;
         const unrollProgress = 1 - deltaX / width;
         progress.value = Math.max(0, Math.min(1, unrollProgress));
       } else {
-        // Swiping left (negative drag from startX):
-        // Progress increases from 0 up toward 1
         const deltaX = startX.value - e.x;
         const curlProgress = deltaX / width;
         progress.value = Math.max(0, Math.min(1, curlProgress));
@@ -212,113 +234,129 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 
       if (currentAnim.value === "prev") {
         if (passedThreshold) {
-          // Complete backward flip
           progress.value = withTiming(0, { duration: 250 }, (finished) => {
             if (finished) {
               currentIndex.value--;
+              img1Index.value = currentIndex.value;
+              runOnJS(updateJSIndex)(currentIndex.value);
             }
           });
         } else {
-          // Cancel backward flip: re-curl back off-screen to 1 and restore index
           progress.value = withTiming(1, { duration: 200 }, (finished) => {
             if (finished) {
-              img1Index.value = currentIndex.value;
               progress.value = 0;
             }
           });
         }
       } else {
         if (passedThreshold) {
-          // Complete forward flip
           progress.value = withTiming(1, { duration: 250 }, (finished) => {
             if (finished) {
               currentIndex.value++;
               img1Index.value = currentIndex.value;
               progress.value = 0;
+              runOnJS(updateJSIndex)(currentIndex.value);
             }
           });
         } else {
-          // Cancel forward flip
           progress.value = withTiming(0, { duration: 200 });
         }
       }
     })
     .enabled(gestureEnabled);
 
-  // Store Captured Image Handlers
-  const handleSetImage = useCallback((img: SkImage, index: number) => {
-    setViewImages((prev) => {
-      if (prev[index]) return prev;
-      const next = [...prev];
-      next[index] = img;
-      return next;
-    });
-  }, []);
-
-  // Imperative Controller Methods
+  // Imperative Methods
   const next = useCallback(() => {
-    if (currentIndex.value === dataLength - 1) return;
+    if (currentIndex.value >= dataLength - 1) return;
 
-    progress.value = withTiming(1, { duration: 800 }, (finished) => {
+    currentAnim.value = "next";
+    progress.value = withTiming(1, { duration: 400 }, (finished) => {
       if (finished) {
         currentIndex.value++;
-      }
-      if (finished && img1Index.value + 1 !== dataLength - 1) {
-        img1Index.value++;
+        img1Index.value = currentIndex.value;
         progress.value = 0;
+        runOnJS(updateJSIndex)(currentIndex.value);
       }
     });
-  }, [currentIndex, dataLength, img1Index, progress]);
+  }, [currentIndex, dataLength, img1Index, progress, updateJSIndex]);
 
   const prev = useCallback(() => {
     if (currentIndex.value <= 0) return;
 
     currentAnim.value = "prev";
     progress.value = 1;
-
     progress.value = withTiming(0, { duration: 400 }, (finished) => {
       if (finished) {
         currentIndex.value--;
-        img1Index.value--;
+        img1Index.value = currentIndex.value;
+        runOnJS(updateJSIndex)(currentIndex.value);
       }
     });
-  }, [currentIndex, img1Index, progress, currentAnim]);
+  }, [currentIndex, img1Index, progress, updateJSIndex]);
 
   useImperativeHandle(ref, () => ({ next, prev }), [next, prev]);
 
-  const isCapturing =
-    (!images || images.length === 0) && viewImages.length < (data?.length ?? 0);
+  // Windowing: Compute indices around the active page (Prev, Current, Next)
+  // Broadened window to capture upcoming pages early in the background
+  const windowIndices = useMemo(() => {
+    const indices: number[] = [];
+
+    if (activeJSIndex > 0) indices.push(activeJSIndex - 1); // Prev
+    indices.push(activeJSIndex);                            // Current
+    if (activeJSIndex < dataLength - 1) indices.push(activeJSIndex + 1); // Next
+    if (activeJSIndex < dataLength - 2) indices.push(activeJSIndex + 2); // Pre-warm Next+1
+
+    return indices;
+  }, [activeJSIndex, dataLength]);
 
   return (
     <GestureDetector gesture={gesture}>
       <View style={styles.container}>
-        {isCapturing ? (
-          // Snapshot Capture Stage
-          data?.map((item, index) => (
-            <CaptureItem
-              key={index}
-              setImages={(img) => handleSetImage(img, index)}
-            >
-              {renderPage ? (
-                renderPage({ item, index })
-              ) : (
-                <View style={styles.defaultPage}>
-                  <Text style={styles.defaultText}>{item.value}</Text>
-                </View>
-              )}
-            </CaptureItem>
-          ))
-        ) : (
-          // Skia Shader Rendering Stage
-          <Canvas style={styles.canvas}>
-            <Fill>
-              <Shader source={shaderEffect} uniforms={uniforms}>
-                <ImageShader image={img1} fit="cover" width={width} height={height} />
-                <ImageShader image={img2} fit="cover" width={width} height={height} />
-              </Shader>
-            </Fill>
-          </Canvas>
-        )}
+        {/* 1. Windowed Off-screen Snapshot Engine - Keeps RAM minimal and prevents crashes */}
+        <View style={styles.captureGroup} pointerEvents="none">
+          {data &&
+            windowIndices.map((pageIdx) => {
+              // Skip if already captured
+              if (viewImages[pageIdx]) return null;
+
+              return (
+                <CaptureItem
+                  key={`capture-${pageIdx}`}
+                  onCaptured={(img) => handleSetImage(img, pageIdx)}
+                >
+                  {renderPage ? (
+                    renderPage({ item: data[pageIdx], index: pageIdx })
+                  ) : (
+                    <View style={styles.defaultPage}>
+                      <Text style={styles.defaultText}>
+                        {data[pageIdx]?.value}
+                      </Text>
+                    </View>
+                  )}
+                </CaptureItem>
+              );
+            })}
+        </View>
+
+        {/* 2. Main Skia Canvas Engine */}
+        <Canvas style={styles.canvas}>
+          <Fill>
+            <Shader source={shaderEffect} uniforms={uniforms}>
+              <ImageShader
+                image={img1}
+                fit="cover"
+                width={width}
+                height={height}
+              />
+              <ImageShader
+                image={img2}
+                fit="cover"
+                width={width}
+                height={height}
+              />
+            </Shader>
+          </Fill>
+        </Canvas>
       </View>
     </GestureDetector>
   );
@@ -330,12 +368,18 @@ const styles = StyleSheet.create({
   container: {
     width,
     height,
+    backgroundColor: "#FAF8F5",
+  },
+  captureGroup: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    opacity: 0,
+    zIndex: -1,
   },
   captureContainer: {
     width,
     height,
-    borderWidth: 1,
-    borderColor: "#333",
   },
   canvas: {
     width,
@@ -347,8 +391,6 @@ const styles = StyleSheet.create({
     padding: 32,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#333",
   },
   defaultText: {
     fontSize: 18,

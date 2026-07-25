@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,89 +8,186 @@ import {
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 
-import PageCurl from '../components/page';
 import { PageCurlHandle } from '../types';
-import { paginateText } from '../lib/paginateText';
+import { books } from '../constants';
+import PageCurl from '../components/page';
 
-// ==========================================
-// Constants & Layout Config
-// ==========================================
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const FONT_SIZE = 17;
 const LINE_HEIGHT = 28;
-// Estimated characters per line for Fidel script at FONT_SIZE = 17
-const CHARS_PER_LINE = Math.floor((SCREEN_WIDTH - 48) / (FONT_SIZE * 0.6));
+
+interface RawVerseRow {
+  chapter_number: number;
+  verse_number: number;
+  verse_text: string;
+  name_am: string;
+}
+
+interface PageItem {
+  text: string;
+  chapterNumber: number;
+  pageInChapter: number;
+  totalChapterPages: number;
+}
+
+interface PaginatedBookResult {
+  allPages: PageItem[];
+  chapterStartIndices: Record<number, number>;
+  totalChapters: number;
+}
 
 // ==========================================
-// Main Component
+// Helper: Paginate Full Book with Clean Chapter Breaks
 // ==========================================
-export function AutoPaginatedReader({ route }: any) {
+function paginateBookText(
+  chaptersData: Record<number, string[]>,
+  containerHeight: number,
+  lineHeight = 28
+): PaginatedBookResult {
+  const allPages: PageItem[] = [];
+  const chapterStartIndices: Record<number, number> = {};
 
+  const availableHeight = containerHeight - 120; // Room for headers/footers
+  const maxLinesPerPage = Math.floor(availableHeight / lineHeight);
+
+  const chapterNumbers = Object.keys(chaptersData)
+    .map(Number)
+    .sort((a, b) => a - b);
+
+  let globalPageIndex = 0;
+
+  for (const chapNum of chapterNumbers) {
+    chapterStartIndices[chapNum] = globalPageIndex;
+
+    const verses = chaptersData[chapNum];
+    const paragraphs = verses.join('\n\n').split('\n\n');
+
+    let currentPageLines: string[] = [];
+    let currentLineCount = 0;
+    let pageInChapter = 1;
+
+    const chapterTempPages: string[] = [];
+
+    for (const paragraph of paragraphs) {
+      // Line count estimate (~42 chars per line on mobile)
+      const estimatedLines = Math.ceil(paragraph.length / 42) + 1;
+
+      if (currentLineCount + estimatedLines > maxLinesPerPage && currentPageLines.length > 0) {
+        chapterTempPages.push(currentPageLines.join('\n\n'));
+        currentPageLines = [paragraph];
+        currentLineCount = estimatedLines;
+      } else {
+        currentPageLines.push(paragraph);
+        currentLineCount += estimatedLines;
+      }
+    }
+
+    if (currentPageLines.length > 0) {
+      chapterTempPages.push(currentPageLines.join('\n\n'));
+    }
+
+    // Map temp pages to final metadata-enriched PageItem objects
+    const totalChapterPages = chapterTempPages.length;
+    chapterTempPages.forEach((pageText, idx) => {
+      allPages.push({
+        text: pageText,
+        chapterNumber: chapNum,
+        pageInChapter: idx + 1,
+        totalChapterPages,
+      });
+      globalPageIndex++;
+    });
+  }
+
+  return {
+    allPages,
+    chapterStartIndices,
+    totalChapters: chapterNumbers.length,
+  };
+}
+
+// ==========================================
+// Main Reader Component
+// ==========================================
+export function AutoPaginatedReader() {
   const db = useSQLiteContext();
   const curlRef = useRef<PageCurlHandle>(null);
-  const [chapterContent, setChapterContent] = useState<string>('');
-  const [pages, setPages] = useState<string[]>([]);
-  const { bookId, bookName, initialChapter = 1 } = route.params || {bookId: 1, bookName: "ኦሪት ዘፍጥረት", initialChapter: 1};
-  const [chapter, setChapter] = useState<number>(initialChapter);
+
+  const [bookIndex, setBookIndex] = useState<number>(0);
+  const [paginatedBook, setPaginatedBook] = useState<PaginatedBookResult | null>(null);
+  const [bookName, setBookName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
-  const [initialPageIndex, setInitialPageIndex] = useState<number>(0);
 
+  const activeBookMeta = books[bookIndex] || books[0];
 
-  // 2. Fetch and paginate text whenever 'chapter' changes
-  const loadChapter = useCallback(async (targetChapter: number, startAtEnd = false) => {
-    setLoading(true);
-    try {
-      // Query the database for chapter content
-      const result = await db.getAllAsync<{ verse_text: string }>(
-          `SELECT v.verse_text
-           FROM books b
-           JOIN chapters c ON b.book_id = c.book_id
-           JOIN verses v ON c.chapter_id = v.chapter_id
-           WHERE b.book_id = ? AND c.chapter_number = ?
-           ORDER BY v.verse_number ASC;`,
-          [bookId, targetChapter]
+  // Fetch and Paginate Entire Book
+  const loadAndPaginateBook = useCallback(
+    async (targetBookId: number) => {
+      setLoading(true);
+      try {
+        // AutoPaginatedReader.tsx - Memory Safe SQLite Fetch
+        const rows = await db.getAllAsync<RawVerseRow>(
+          `SELECT c.chapter_number, v.verse_number, v.verse_text, b.name_am
+          FROM books b
+          JOIN chapters c ON b.book_id = c.book_id
+          JOIN verses v ON c.chapter_id = v.chapter_id
+          WHERE b.book_id = ?
+          ORDER BY c.chapter_number ASC, v.verse_number ASC;`,
+          [targetBookId]
         );
 
-      if (result && result.length > 0) {
-        // Paginate the raw Amharic text
-        const calculatedPages = paginateText(result.map((r) => r.verse_text).join('\n'), SCREEN_HEIGHT - 72); // Adjust for padding and header/footer
-        
-        setPages(calculatedPages);
-        setChapter(targetChapter);
+        if (rows && rows.length > 0) {
+          setBookName(rows[0].name_am || activeBookMeta.name_am);
 
-        // If swiping back into a previous chapter, start on its final page
-        setInitialPageIndex(startAtEnd ? calculatedPages.length - 1 : 0);
+          // Group by Chapter Number
+          const chaptersData: Record<number, string[]> = {};
+          for (const row of rows) {
+            if (!chaptersData[row.chapter_number]) {
+              chaptersData[row.chapter_number] = [];
+            }
+            chaptersData[row.chapter_number].push(
+              `${row.verse_number}. ${row.verse_text.trim()}`
+            );
+          }
+
+          // Paginate entire book with forced page breaks per chapter
+          const result = paginateBookText(chaptersData, SCREEN_HEIGHT, LINE_HEIGHT);
+          setPaginatedBook(result);
+        }
+      } catch (error) {
+        console.error('Error paginating entire book:', error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Error loading chapter:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [db, bookId]);
+    },
+    [db, activeBookMeta.name_am]
+  );
 
   useEffect(() => {
-    loadChapter(chapter);
-  }, []);
+    loadAndPaginateBook(activeBookMeta.book_id);
+  }, [bookIndex]);
 
-  // 3. Callback Handlers
-  const handleNextChapter = () => {
-    console.log("Reached end of chapter. Loading next chapter...");
-    loadChapter(chapter + 1, false); // Load next, start on page 0
-  };
-
-  const handlePrevChapter = () => {
-    console.log("Reached start of chapter. Loading previous chapter...");
-    if (chapter > 1) {
-      loadChapter(chapter - 1, true); // Load prev, start on last page
+  // Book Boundary Handlers
+  const handleReachEnd = useCallback(() => {
+    if (bookIndex < books.length - 1) {
+      setBookIndex((prev) => prev + 1);
     }
-  };
+  }, [bookIndex]);
 
-  if (loading) {
+  const handleReachStart = useCallback(() => {
+    if (bookIndex > 0) {
+      setBookIndex((prev) => prev - 1);
+    }
+  }, [bookIndex]);
+
+  if (loading || !paginatedBook) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#8b0000" />
-        <Text style={styles.loadingText}>ምዕራፍ {chapter} በመጫን ላይ...</Text>
+        <Text style={styles.loadingText}>
+          {activeBookMeta.name_am} በመጫን ላይ...
+        </Text>
       </View>
     );
   }
@@ -98,18 +195,21 @@ export function AutoPaginatedReader({ route }: any) {
   return (
     <View style={styles.container}>
       <PageCurl
+        key={`book-${activeBookMeta.book_id}`}
         ref={curlRef}
-        data={pages}
-        onReachEnd={handleNextChapter}
-        onReachStart={handlePrevChapter}
+        data={paginatedBook.allPages}
+        initialIndex={0}
+        onReachEnd={handleReachEnd}
+        onReachStart={handleReachStart}
         gestureEnabled={true}
-        chapterTitle={`${bookName || 'ኦሪት ዘፍጥረት'} - ምዕራፍ ${chapter}`}
-        renderPage={({ item, index }) => (
-          <View style={styles.pageCard} key={index}>
-            <Text style={styles.chapterTitle}>{bookName}</Text>
-            <Text style={styles.pageText}>{item}</Text>
+        renderPage={({ item, index }: { item: PageItem; index: number }) => (
+          <View style={styles.pageCard}>
+            <Text style={styles.chapterTitle}>
+              {`${bookName} - ምዕራፍ ${item.chapterNumber}`}
+            </Text>
+            <Text style={styles.pageText}>{item.text}</Text>
             <Text style={styles.pageFooter}>
-              ገጽ {index + 1} / {pages.length}
+              ምዕራፍ {item.chapterNumber} | ገጽ {item.pageInChapter} / {item.totalChapterPages}
             </Text>
           </View>
         )}
@@ -118,9 +218,6 @@ export function AutoPaginatedReader({ route }: any) {
   );
 }
 
-// ==========================================
-// Styles
-// ==========================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -137,26 +234,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748b',
   },
-  hiddenMeasuringView: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0,
-    pointerEvents: 'none',
-  },
-  measuringText: {
-    fontSize: FONT_SIZE,
-    lineHeight: LINE_HEIGHT,
-  },
   pageCard: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
     backgroundColor: '#FAF8F5',
     paddingHorizontal: 24,
     paddingTop: 48,
-    paddingBottom: 24,
+    paddingBottom: 28,
   },
   chapterTitle: {
     fontSize: 20,
