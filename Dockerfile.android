@@ -1,0 +1,45 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    ANDROID_HOME=/opt/android-sdk \
+    GRADLE_USER_HOME=/root/.gradle \
+    GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.jvmargs=\"-Xmx4096m -XX:+UseParallelGC\"" \
+    PATH=$PATH:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools
+
+# 1. Install System Dependencies, Java 17, and Node.js in a single layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk-headless \
+    curl \
+    git \
+    unzip \
+    build-essential \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# 2. Download and set up Android Command Line Tools
+RUN mkdir -p $ANDROID_HOME/cmdline-tools \
+    && curl -fsSL -o sdk.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+    && unzip -q sdk.zip -d $ANDROID_HOME/cmdline-tools \
+    && rm sdk.zip \
+    && mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+
+# 3. Pre-install Android SDK components & accept licenses
+RUN yes | sdkmanager --licenses > /dev/null \
+    && sdkmanager --install \
+    "platforms;android-36" \
+    "build-tools;36.0.0" \
+    "platform-tools"
+
+# 4. Pre-download Gradle Distribution inside the image to avoid runtime downloads
+RUN mkdir -p /opt/gradle-dist \
+    && curl -fsSL -o /opt/gradle-dist/gradle-9.3.1-bin.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+
+WORKDIR /app
+
+# Copy entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
