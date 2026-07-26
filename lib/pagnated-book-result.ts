@@ -1,20 +1,30 @@
 // lib/paginateText.ts
 
+// Expanded PageItem interface
+export interface PageItem {
+  text: string;
+  chapterNumber: number;
+  startVerse: number;
+  endVerse: number;
+  pageInChapter: number;
+  totalChapterPages: number;
+}
+
 export interface PaginatedBookResult {
-  allPages: string[];
-  chapterStartIndices: Record<number, number>; // Maps chapterNumber -> globalPageIndex
+  allPages: PageItem[];
+  chapterStartIndices: Record<number, number>; // chapterNum -> globalPageIndex
   totalChapters: number;
 }
 
 export function paginateBookText(
-  chaptersData: Record<number, string[]>, // { 1: ["1. In the beginning...", ...], 2: [...] }
+  chaptersData: Record<number, { verseNum: number; text: string }[]>,
   containerHeight: number,
   lineHeight = 28
 ): PaginatedBookResult {
-  const allPages: string[] = [];
+  const allPages: PageItem[] = [];
   const chapterStartIndices: Record<number, number> = {};
 
-  const availableHeight = containerHeight - 100; // Account for header/footer padding
+  const availableHeight = containerHeight - 120;
   const maxLinesPerPage = Math.floor(availableHeight / lineHeight);
 
   const chapterNumbers = Object.keys(chaptersData)
@@ -24,39 +34,64 @@ export function paginateBookText(
   let globalPageIndex = 0;
 
   for (const chapNum of chapterNumbers) {
-    // 1. Record where this chapter starts in global page index
     chapterStartIndices[chapNum] = globalPageIndex;
-    
+
     const verses = chaptersData[chapNum];
-    const paragraphs = verses.join('\n\n').split('\n\n');
-
-    let currentPageLines: string[] = [];
+    let currentPageVerses: { verseNum: number; text: string }[] = [];
     let currentLineCount = 0;
+    
+    const chapterPagesRaw: { text: string; startVerse: number; endVerse: number }[] = [];
 
-    for (const paragraph of paragraphs) {
-      // Rough line count estimation (~42 chars/line on standard mobile screens)
-      const estimatedLines = Math.ceil(paragraph.length / 42) + 1;
+    for (const verse of verses) {
+      const verseFormatted = `${verse.verseNum}. ${verse.text.trim()}`;
+      const estimatedLines = Math.ceil(verseFormatted.length / 42) + 1;
 
-      if (currentLineCount + estimatedLines > maxLinesPerPage && currentPageLines.length > 0) {
-        allPages.push(currentPageLines.join('\n\n'));
-        globalPageIndex++;
-        currentPageLines = [paragraph];
+      if (currentLineCount + estimatedLines > maxLinesPerPage && currentPageVerses.length > 0) {
+        // Save current page
+        const pageText = currentPageVerses
+          .map((v) => `${v.verseNum}. ${v.text.trim()}`)
+          .join('\n\n');
+
+        chapterPagesRaw.push({
+          text: pageText,
+          startVerse: currentPageVerses[0].verseNum,
+          endVerse: currentPageVerses[currentPageVerses.length - 1].verseNum,
+        });
+
+        currentPageVerses = [verse];
         currentLineCount = estimatedLines;
       } else {
-        currentPageLines.push(paragraph);
+        currentPageVerses.push(verse);
         currentLineCount += estimatedLines;
       }
     }
 
-    // 2. CRITICAL CHANGE: Force page break at chapter end.
-    // Whatever is remaining in currentPageLines gets its own page, 
-    // guaranteeing the NEXT chapter starts clean on globalPageIndex + 1.
-    if (currentPageLines.length > 0) {
-      allPages.push(currentPageLines.join('\n\n'));
-      globalPageIndex++;
-      currentPageLines = [];
-      currentLineCount = 0;
+    // Flush remaining verses in chapter
+    if (currentPageVerses.length > 0) {
+      const pageText = currentPageVerses
+        .map((v) => `${v.verseNum}. ${v.text.trim()}`)
+        .join('\n\n');
+
+      chapterPagesRaw.push({
+        text: pageText,
+        startVerse: currentPageVerses[0].verseNum,
+        endVerse: currentPageVerses[currentPageVerses.length - 1].verseNum,
+      });
     }
+
+    // Build final enriched PageItems
+    const totalChapterPages = chapterPagesRaw.length;
+    chapterPagesRaw.forEach((rawPage, idx) => {
+      allPages.push({
+        text: rawPage.text,
+        chapterNumber: chapNum,
+        startVerse: rawPage.startVerse,
+        endVerse: rawPage.endVerse,
+        pageInChapter: idx + 1,
+        totalChapterPages,
+      });
+      globalPageIndex++;
+    });
   }
 
   return {

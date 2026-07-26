@@ -22,10 +22,15 @@ export interface Verse {
   verse_text: string;
 }
 
+// constants/types.ts (or wherever your Book type lives)
 export interface Book {
-  id:number,
-  value: string;
-  intValue: number;
+  book_id: number;
+  name_am: string;
+  name_en: string;
+  short_name_am: string;
+  short_name_en: string;
+  testament: string;
+  total_chapters: number; // <-- Add this
 }
 
 export type RootDrawerParamList = {
@@ -43,7 +48,10 @@ export type RenderPageProps = {
   index: number
 }
 
-export type PageCurlHandle = {
-  next: () => void
-  prev: () => void
+
+// types.ts
+export interface PageCurlHandle {
+  next: () => void;
+  prev: () => void;
+  jumpTo: (targetIndex: number) => void;
 }

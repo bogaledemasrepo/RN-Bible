@@ -1,16 +1,19 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   Dimensions,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageCurlHandle } from '../types';
 import { books } from '../constants';
 import PageCurl from '../components/page';
+import { NavigationModal } from '../components/navigation-modal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -24,9 +27,11 @@ interface RawVerseRow {
   name_am: string;
 }
 
-interface PageItem {
+export interface PageItem {
   text: string;
   chapterNumber: number;
+  startVerse: number;
+  endVerse: number;
   pageInChapter: number;
   totalChapterPages: number;
 }
@@ -37,18 +42,24 @@ interface PaginatedBookResult {
   totalChapters: number;
 }
 
+interface ParsedVerse {
+  verseNum: number;
+  text: string;
+}
+
 // ==========================================
-// Helper: Paginate Full Book with Clean Chapter Breaks
+// Helper: Paginate Full Book with Clean Chapter Breaks & Verse Bounds
 // ==========================================
 function paginateBookText(
-  chaptersData: Record<number, string[]>,
+  chaptersData: Record<number, ParsedVerse[]>,
   containerHeight: number,
   lineHeight = 28
 ): PaginatedBookResult {
   const allPages: PageItem[] = [];
   const chapterStartIndices: Record<number, number> = {};
 
-  const availableHeight = containerHeight - 120; // Room for headers/footers
+  // Space reserved for headers & footers (paddingTop + paddingBottom + header offset)
+  const availableHeight = containerHeight - 120;
   const maxLinesPerPage = Math.floor(availableHeight / lineHeight);
 
   const chapterNumbers = Object.keys(chaptersData)
@@ -61,38 +72,49 @@ function paginateBookText(
     chapterStartIndices[chapNum] = globalPageIndex;
 
     const verses = chaptersData[chapNum];
-    const paragraphs = verses.join('\n\n').split('\n\n');
-
-    let currentPageLines: string[] = [];
+    let currentPageVerses: ParsedVerse[] = [];
     let currentLineCount = 0;
-    let pageInChapter = 1;
 
-    const chapterTempPages: string[] = [];
+    const chapterTempPages: { text: string; startVerse: number; endVerse: number }[] = [];
 
-    for (const paragraph of paragraphs) {
-      // Line count estimate (~42 chars per line on mobile)
-      const estimatedLines = Math.ceil(paragraph.length / 42) + 1;
+    for (const verse of verses) {
+      const formattedVerse = `${verse.verseNum}. ${verse.text.trim()}`;
+      // Estimate lines required based on character length (~42 chars per line)
+      const estimatedLines = Math.ceil(formattedVerse.length / 42) + 1;
 
-      if (currentLineCount + estimatedLines > maxLinesPerPage && currentPageLines.length > 0) {
-        chapterTempPages.push(currentPageLines.join('\n\n'));
-        currentPageLines = [paragraph];
+      if (currentLineCount + estimatedLines > maxLinesPerPage && currentPageVerses.length > 0) {
+        // Push current page payload
+        chapterTempPages.push({
+          text: currentPageVerses.map((v) => `${v.verseNum}. ${v.text.trim()}`).join('\n\n'),
+          startVerse: currentPageVerses[0].verseNum,
+          endVerse: currentPageVerses[currentPageVerses.length - 1].verseNum,
+        });
+
+        currentPageVerses = [verse];
         currentLineCount = estimatedLines;
       } else {
-        currentPageLines.push(paragraph);
+        currentPageVerses.push(verse);
         currentLineCount += estimatedLines;
       }
     }
 
-    if (currentPageLines.length > 0) {
-      chapterTempPages.push(currentPageLines.join('\n\n'));
+    // Flush any remaining verses for the chapter
+    if (currentPageVerses.length > 0) {
+      chapterTempPages.push({
+        text: currentPageVerses.map((v) => `${v.verseNum}. ${v.text.trim()}`).join('\n\n'),
+        startVerse: currentPageVerses[0].verseNum,
+        endVerse: currentPageVerses[currentPageVerses.length - 1].verseNum,
+      });
     }
 
-    // Map temp pages to final metadata-enriched PageItem objects
+    // Convert raw page buffers to metadata-enriched PageItem instances
     const totalChapterPages = chapterTempPages.length;
-    chapterTempPages.forEach((pageText, idx) => {
+    chapterTempPages.forEach((page, idx) => {
       allPages.push({
-        text: pageText,
+        text: page.text,
         chapterNumber: chapNum,
+        startVerse: page.startVerse,
+        endVerse: page.endVerse,
         pageInChapter: idx + 1,
         totalChapterPages,
       });
@@ -119,44 +141,47 @@ export function AutoPaginatedReader() {
   const [bookName, setBookName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
+  const [navModalVisible, setNavModalVisible] = useState<boolean>(false);
+  const [pendingChapterJump, setPendingChapterJump] = useState<number | null>(null);
+
   const activeBookMeta = books[bookIndex] || books[0];
 
-  // Fetch and Paginate Entire Book
+  // Fetch and Paginate Entire Book from SQLite
   const loadAndPaginateBook = useCallback(
     async (targetBookId: number) => {
       setLoading(true);
       try {
-        // AutoPaginatedReader.tsx - Memory Safe SQLite Fetch
         const rows = await db.getAllAsync<RawVerseRow>(
           `SELECT c.chapter_number, v.verse_number, v.verse_text, b.name_am
-          FROM books b
-          JOIN chapters c ON b.book_id = c.book_id
-          JOIN verses v ON c.chapter_id = v.chapter_id
-          WHERE b.book_id = ?
-          ORDER BY c.chapter_number ASC, v.verse_number ASC;`,
+           FROM books b
+           JOIN chapters c ON b.book_id = c.book_id
+           JOIN verses v ON c.chapter_id = v.chapter_id
+           WHERE b.book_id = ?
+           ORDER BY c.chapter_number ASC, v.verse_number ASC;`,
           [targetBookId]
         );
 
         if (rows && rows.length > 0) {
           setBookName(rows[0].name_am || activeBookMeta.name_am);
 
-          // Group by Chapter Number
-          const chaptersData: Record<number, string[]> = {};
+          // Group raw database records into structured chapter objects
+          const chaptersData: Record<number, ParsedVerse[]> = {};
           for (const row of rows) {
             if (!chaptersData[row.chapter_number]) {
               chaptersData[row.chapter_number] = [];
             }
-            chaptersData[row.chapter_number].push(
-              `${row.verse_number}. ${row.verse_text.trim()}`
-            );
+            chaptersData[row.chapter_number].push({
+              verseNum: row.verse_number,
+              text: row.verse_text,
+            });
           }
 
-          // Paginate entire book with forced page breaks per chapter
+          // Compute pagination layout with chapter page breaks
           const result = paginateBookText(chaptersData, SCREEN_HEIGHT, LINE_HEIGHT);
           setPaginatedBook(result);
         }
       } catch (error) {
-        console.error('Error paginating entire book:', error);
+        console.error('Error paginating book:', error);
       } finally {
         setLoading(false);
       }
@@ -164,11 +189,41 @@ export function AutoPaginatedReader() {
     [db, activeBookMeta.name_am]
   );
 
+  // Load book whenever active book selection changes
   useEffect(() => {
     loadAndPaginateBook(activeBookMeta.book_id);
-  }, [bookIndex]);
+  }, [activeBookMeta.book_id, loadAndPaginateBook]);
 
-  // Book Boundary Handlers
+  // Handle selection from NavigationModal
+  const handleJumpToTarget = useCallback(
+    (targetBookIndex: number, targetChapterNumber: number) => {
+      if (targetBookIndex === bookIndex) {
+        // Same book: Jump immediately to calculated index
+        if (paginatedBook?.chapterStartIndices[targetChapterNumber] !== undefined) {
+          const targetPageIndex = paginatedBook.chapterStartIndices[targetChapterNumber];
+          curlRef.current?.jumpTo?.(targetPageIndex);
+        }
+      } else {
+        // Different book: Queue target chapter jump and trigger book load
+        setPendingChapterJump(targetChapterNumber);
+        setBookIndex(targetBookIndex);
+      }
+    },
+    [bookIndex, paginatedBook]
+  );
+
+  // Auto-jump after new book completes loading
+  useEffect(() => {
+    if (!loading && paginatedBook && pendingChapterJump !== null) {
+      const targetPageIndex = paginatedBook.chapterStartIndices[pendingChapterJump] ?? 0;
+      setTimeout(() => {
+        curlRef.current?.jumpTo?.(targetPageIndex);
+        setPendingChapterJump(null);
+      }, 100);
+    }
+  }, [loading, paginatedBook, pendingChapterJump]);
+
+  // Handle Reader Book Boundaries
   const handleReachEnd = useCallback(() => {
     if (bookIndex < books.length - 1) {
       setBookIndex((prev) => prev + 1);
@@ -193,7 +248,26 @@ export function AutoPaginatedReader() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      {/* Interactive Navigation Header */}
+      <View style={styles.headerBar}>
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={() => setNavModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.headerTitleText}>{`${bookName} ▾`}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Navigation Modal Picker */}
+      <NavigationModal
+        visible={navModalVisible}
+        onClose={() => setNavModalVisible(false)}
+        onSelectTarget={handleJumpToTarget}
+      />
+
+      {/* Skia 3D Page Reader */}
       <PageCurl
         key={`book-${activeBookMeta.book_id}`}
         ref={curlRef}
@@ -202,19 +276,19 @@ export function AutoPaginatedReader() {
         onReachEnd={handleReachEnd}
         onReachStart={handleReachStart}
         gestureEnabled={true}
-        renderPage={({ item, index }: { item: PageItem; index: number }) => (
+        renderPage={({ item }: { item: PageItem; index: number }) => (
           <View style={styles.pageCard}>
             <Text style={styles.chapterTitle}>
               {`${bookName} - ምዕራፍ ${item.chapterNumber}`}
             </Text>
             <Text style={styles.pageText}>{item.text}</Text>
             <Text style={styles.pageFooter}>
-              ምዕራፍ {item.chapterNumber} | ገጽ {item.pageInChapter} / {item.totalChapterPages}
+              ምዕራፍ {item.chapterNumber} ({item.startVerse > 0 ? `ቁጥር ${item.startVerse}-${item.endVerse}` : ''}) | ገጽ {item.pageInChapter} / {item.totalChapterPages}
             </Text>
           </View>
         )}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -234,12 +308,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748b',
   },
+  headerBar: {
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FAF8F5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    zIndex: 10,
+  },
+  headerButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+  },
+  headerTitleText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#8B0000',
+  },
   pageCard: {
     width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
+    height: SCREEN_HEIGHT - 44,
     backgroundColor: '#FAF8F5',
     paddingHorizontal: 24,
-    paddingTop: 48,
+    paddingTop: 24,
     paddingBottom: 28,
   },
   chapterTitle: {

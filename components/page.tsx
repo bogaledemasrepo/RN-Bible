@@ -29,7 +29,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { PageCurlHandle, RenderPageProps } from "../types";
 import { pageCurlShader } from "../constants";
 
-const { width, height } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 type Props = {
   images?: any[];
@@ -42,7 +42,7 @@ type Props = {
 };
 
 // ==========================================
-// Sub-Component: Off-Screen View Snapshot
+// Sub-Component: Off-Screen View Snapshot Engine
 // ==========================================
 function CaptureItem({
   children,
@@ -58,7 +58,7 @@ function CaptureItem({
     if (isCaptured.current) return;
     isCaptured.current = true;
 
-    // Small delay to allow font glyphs & views to lay out cleanly
+    // Small delay ensuring layout calculations and font glyphs are finalized
     await new Promise((resolve) => setTimeout(resolve, 60));
 
     try {
@@ -102,14 +102,14 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 ) {
   const dataLength = images?.length ?? data?.length ?? 0;
 
-  // Static loaded image references (if images prop is supplied)
+  // Static image references (if loading static assets)
   const loadedImages = images?.map((item: any) => useImage(item));
 
-  // Dynamic Skia Images array (index -> SkImage)
+  // Dynamic Skia Texture Cache Map (index -> SkImage)
   const [viewImages, setViewImages] = useState<Record<number, SkImage>>({});
   const [activeJSIndex, setActiveJSIndex] = useState<number>(initialIndex);
 
-  // Reanimated Animation Shared Values
+  // Reanimated Shared Values
   const currentIndex = useSharedValue(initialIndex);
   const img1Index = useSharedValue(initialIndex);
   const topFlag = useSharedValue(0);
@@ -117,7 +117,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   const startX = useSharedValue(0);
   const progress = useSharedValue(0);
 
-  // Sync state when dataset or initial index changes
+  // Sync state when dataset changes
   useEffect(() => {
     setViewImages({});
     currentIndex.value = initialIndex;
@@ -126,7 +126,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     progress.value = 0;
   }, [data, images, initialIndex]);
 
-  // Sync Reanimated Index back to JS for Windowing
+  // Sync Reanimated Index back to JS thread for windowing
   const updateJSIndex = useCallback((idx: number) => {
     setActiveJSIndex(idx);
   }, []);
@@ -139,15 +139,14 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 
   const uniforms = useDerivedValue(
     () => ({
-      resolution: [width, height] as [number, number],
+      resolution: [SCREEN_WIDTH, SCREEN_HEIGHT] as [number, number],
       progress: progress.value,
       topFlag: topFlag.value,
     }),
     [progress, topFlag]
   );
 
-  // Active Textures (Subscribed directly by Skia ImageShader without .value reads in render)
-  // Active Textures with Zero-Flicker Native Thread Fallback
+  // Active Shader Textures with Zero-Flicker Fallback
   const img1 = useDerivedValue(() => {
     const idx = img1Index.value;
     const currentSkImage = loadedImages?.[idx] || viewImages[idx];
@@ -160,7 +159,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 
     const targetSkImage = loadedImages?.[targetIdx] || viewImages[targetIdx];
 
-    // If target texture is null or still encoding, seamlessly hold img1's texture value
+    // Hold current texture if target texture is still rendering to avoid blank canvas frames
     if (!targetSkImage) {
       return img1.value;
     }
@@ -168,7 +167,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     return targetSkImage;
   }, [loadedImages, viewImages, img1Index, currentAnim, img1]);
 
-  // Store captured view image
+  // Store newly captured SkImage texture
   const handleSetImage = useCallback((img: SkImage, index: number) => {
     setViewImages((prev) => {
       if (prev[index]) return prev;
@@ -176,7 +175,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     });
   }, []);
 
-  // Gesture Controls
+  // Gesture Handler Engine
   const gesture = Gesture.Pan()
     .manualActivation(true)
     .onTouchesDown((e) => {
@@ -215,22 +214,22 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         progress.value = 0;
       }
 
-      topFlag.value = e.y < height / 2 ? 0 : 1;
+      topFlag.value = e.y < SCREEN_HEIGHT / 2 ? 0 : 1;
     })
     .onChange((e) => {
       if (currentAnim.value === "prev") {
         const deltaX = e.x - startX.value;
-        const unrollProgress = 1 - deltaX / width;
+        const unrollProgress = 1 - deltaX / SCREEN_WIDTH;
         progress.value = Math.max(0, Math.min(1, unrollProgress));
       } else {
         const deltaX = startX.value - e.x;
-        const curlProgress = deltaX / width;
+        const curlProgress = deltaX / SCREEN_WIDTH;
         progress.value = Math.max(0, Math.min(1, curlProgress));
       }
     })
     .onEnd((e) => {
       const deltaX = e.x - startX.value;
-      const passedThreshold = Math.abs(deltaX) > width / 3;
+      const passedThreshold = Math.abs(deltaX) > SCREEN_WIDTH / 3;
 
       if (currentAnim.value === "prev") {
         if (passedThreshold) {
@@ -265,7 +264,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     })
     .enabled(gestureEnabled);
 
-  // Imperative Methods
+  // Imperative Handles (Next, Prev, Instant Jump)
   const next = useCallback(() => {
     if (currentIndex.value >= dataLength - 1) return;
 
@@ -294,17 +293,27 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     });
   }, [currentIndex, img1Index, progress, updateJSIndex]);
 
-  useImperativeHandle(ref, () => ({ next, prev }), [next, prev]);
+  const jumpTo = useCallback(
+    (targetIndex: number) => {
+      const clampedIndex = Math.max(0, Math.min(targetIndex, dataLength - 1));
+      currentIndex.value = clampedIndex;
+      img1Index.value = clampedIndex;
+      progress.value = 0;
+      runOnJS(updateJSIndex)(clampedIndex);
+    },
+    [currentIndex, dataLength, img1Index, progress, updateJSIndex]
+  );
 
-  // Windowing: Compute indices around the active page (Prev, Current, Next)
-  // Broadened window to capture upcoming pages early in the background
+  useImperativeHandle(ref, () => ({ next, prev, jumpTo }), [next, prev, jumpTo]);
+
+  // Windowed Indexing (Captures Prev, Active, Next, and Next+1 to pre-warm GPU)
   const windowIndices = useMemo(() => {
     const indices: number[] = [];
 
-    if (activeJSIndex > 0) indices.push(activeJSIndex - 1); // Prev
-    indices.push(activeJSIndex);                            // Current
-    if (activeJSIndex < dataLength - 1) indices.push(activeJSIndex + 1); // Next
-    if (activeJSIndex < dataLength - 2) indices.push(activeJSIndex + 2); // Pre-warm Next+1
+    if (activeJSIndex > 0) indices.push(activeJSIndex - 1);
+    indices.push(activeJSIndex);
+    if (activeJSIndex < dataLength - 1) indices.push(activeJSIndex + 1);
+    if (activeJSIndex < dataLength - 2) indices.push(activeJSIndex + 2);
 
     return indices;
   }, [activeJSIndex, dataLength]);
@@ -312,11 +321,10 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   return (
     <GestureDetector gesture={gesture}>
       <View style={styles.container}>
-        {/* 1. Windowed Off-screen Snapshot Engine - Keeps RAM minimal and prevents crashes */}
+        {/* 1. Off-screen Windowed Capture Engine */}
         <View style={styles.captureGroup} pointerEvents="none">
           {data &&
             windowIndices.map((pageIdx) => {
-              // Skip if already captured
               if (viewImages[pageIdx]) return null;
 
               return (
@@ -338,21 +346,21 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
             })}
         </View>
 
-        {/* 2. Main Skia Canvas Engine */}
+        {/* 2. Primary Skia WebGL-level Canvas Engine */}
         <Canvas style={styles.canvas}>
           <Fill>
             <Shader source={shaderEffect} uniforms={uniforms}>
               <ImageShader
                 image={img1}
                 fit="cover"
-                width={width}
-                height={height}
+                width={SCREEN_WIDTH}
+                height={SCREEN_HEIGHT}
               />
               <ImageShader
                 image={img2}
                 fit="cover"
-                width={width}
-                height={height}
+                width={SCREEN_WIDTH}
+                height={SCREEN_HEIGHT}
               />
             </Shader>
           </Fill>
@@ -366,8 +374,8 @@ export default PageCurl;
 
 const styles = StyleSheet.create({
   container: {
-    width,
-    height,
+    flex: 1,
+    width: "100%",
     backgroundColor: "#FAF8F5",
   },
   captureGroup: {
@@ -378,11 +386,12 @@ const styles = StyleSheet.create({
     zIndex: -1,
   },
   captureContainer: {
-    width,
-    height,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
   canvas: {
-    width,
+    flex: 1,
+    width: "100%",
     height: "100%",
   },
   defaultPage: {
