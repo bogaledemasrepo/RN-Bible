@@ -17,8 +17,8 @@ import { NavigationModal } from '../components/navigation-modal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const FONT_SIZE = 17;
-const LINE_HEIGHT = 28;
+const FONT_SIZE = 16;
+const LINE_HEIGHT = 24;
 
 interface RawVerseRow {
   chapter_number: number;
@@ -85,7 +85,7 @@ function paginateBookText(
       if (currentLineCount + estimatedLines > maxLinesPerPage && currentPageVerses.length > 0) {
         // Push current page payload
         chapterTempPages.push({
-          text: currentPageVerses.map((v) => `${v.verseNum}. ${v.text.trim()}`).join('\n\n'),
+          text: currentPageVerses.map((v) => `${v.verseNum}. ${v.text.trim()}`).join('\n'),
           startVerse: currentPageVerses[0].verseNum,
           endVerse: currentPageVerses[currentPageVerses.length - 1].verseNum,
         });

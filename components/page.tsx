@@ -4,7 +4,6 @@ import React, {
   useEffect,
   useImperativeHandle,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { Dimensions, StyleSheet, Text, View } from "react-native";
@@ -12,7 +11,6 @@ import {
   Canvas,
   Fill,
   ImageShader,
-  makeImageFromView,
   Shader,
   Skia,
   useImage,
@@ -28,6 +26,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { PageCurlHandle, RenderPageProps } from "../types";
 import { pageCurlShader } from "../constants";
+import CaptureItem from "./capture-item";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -40,50 +39,6 @@ type Props = {
   renderPage?: (props: RenderPageProps) => React.ReactNode;
   gestureEnabled?: boolean;
 };
-
-// ==========================================
-// Sub-Component: Off-Screen View Snapshot Engine
-// ==========================================
-function CaptureItem({
-  children,
-  onCaptured,
-}: {
-  children: React.ReactNode;
-  onCaptured: (img: SkImage) => void;
-}) {
-  const viewRef = useRef<View>(null);
-  const isCaptured = useRef(false);
-
-  const handleLayout = async () => {
-    if (isCaptured.current) return;
-    isCaptured.current = true;
-
-    // Small delay ensuring layout calculations and font glyphs are finalized
-    await new Promise((resolve) => setTimeout(resolve, 60));
-
-    try {
-      if (viewRef.current) {
-        const image = await makeImageFromView(viewRef as any);
-        if (image) {
-          onCaptured(image);
-        }
-      }
-    } catch (e) {
-      console.warn("Snapshot capture failed:", e);
-    }
-  };
-
-  return (
-    <View
-      ref={viewRef}
-      onLayout={handleLayout}
-      collapsable={false}
-      style={styles.captureContainer}
-    >
-      {children}
-    </View>
-  );
-}
 
 // ==========================================
 // Main Component: PageCurl Shader Engine
@@ -305,11 +260,11 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   );
 
   useImperativeHandle(ref, () => ({ next, prev, jumpTo }), [next, prev, jumpTo]);
-
+  
   // Windowed Indexing (Captures Prev, Active, Next, and Next+1 to pre-warm GPU)
   const windowIndices = useMemo(() => {
     const indices: number[] = [];
-
+    if (activeJSIndex > 1) indices.push(activeJSIndex - 2);
     if (activeJSIndex > 0) indices.push(activeJSIndex - 1);
     indices.push(activeJSIndex);
     if (activeJSIndex < dataLength - 1) indices.push(activeJSIndex + 1);
@@ -337,7 +292,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
                   ) : (
                     <View style={styles.defaultPage}>
                       <Text style={styles.defaultText}>
-                        {data[pageIdx]?.value}
+                        {data[pageIdx]?.value} 11
                       </Text>
                     </View>
                   )}
@@ -348,7 +303,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 
         {/* 2. Primary Skia WebGL-level Canvas Engine */}
         <Canvas style={styles.canvas}>
-          <Fill>
+          <Fill color={"#817b7b"}>
             <Shader source={shaderEffect} uniforms={uniforms}>
               <ImageShader
                 image={img1}
