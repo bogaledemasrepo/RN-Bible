@@ -1,10 +1,10 @@
-export interface Book{
-    book_id: number;
-    name_am: string;
-    name_en: string;
-    short_name_am: string;
-    short_name_en: string;
-    testament: string;
+export interface Book {
+  book_id: number;
+  name_am: string;
+  name_en: string;
+  short_name_am: string;
+  short_name_en: string;
+  testament: string;
 }
 
 // types.ts or top of App.tsx
@@ -39,15 +39,14 @@ export type RootDrawerParamList = {
 };
 
 export type ItemProps = {
-  children: React.ReactNode
-  setImages: (img: any) => void
-}
+  children: React.ReactNode;
+  setImages: (img: any) => void;
+};
 
 export type RenderPageProps = {
-  item: any
-  index: number
-}
-
+  item: any;
+  index: number;
+};
 
 // types.ts
 export interface PageCurlHandle {

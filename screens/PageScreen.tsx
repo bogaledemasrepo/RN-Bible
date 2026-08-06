@@ -75,17 +75,26 @@ function paginateBookText(
     let currentPageVerses: ParsedVerse[] = [];
     let currentLineCount = 0;
 
-    const chapterTempPages: { text: string; startVerse: number; endVerse: number }[] = [];
+    const chapterTempPages: {
+      text: string;
+      startVerse: number;
+      endVerse: number;
+    }[] = [];
 
     for (const verse of verses) {
       const formattedVerse = `${verse.verseNum}. ${verse.text.trim()}`;
       // Estimate lines required based on character length (~42 chars per line)
       const estimatedLines = Math.ceil(formattedVerse.length / 42) + 1;
 
-      if (currentLineCount + estimatedLines > maxLinesPerPage && currentPageVerses.length > 0) {
+      if (
+        currentLineCount + estimatedLines > maxLinesPerPage &&
+        currentPageVerses.length > 0
+      ) {
         // Push current page payload
         chapterTempPages.push({
-          text: currentPageVerses.map((v) => `${v.verseNum}. ${v.text.trim()}`).join('\n'),
+          text: currentPageVerses
+            .map((v) => `${v.verseNum}. ${v.text.trim()}`)
+            .join('\n'),
           startVerse: currentPageVerses[0].verseNum,
           endVerse: currentPageVerses[currentPageVerses.length - 1].verseNum,
         });
@@ -101,7 +110,9 @@ function paginateBookText(
     // Flush any remaining verses for the chapter
     if (currentPageVerses.length > 0) {
       chapterTempPages.push({
-        text: currentPageVerses.map((v) => `${v.verseNum}. ${v.text.trim()}`).join('\n\n'),
+        text: currentPageVerses
+          .map((v) => `${v.verseNum}. ${v.text.trim()}`)
+          .join('\n\n'),
         startVerse: currentPageVerses[0].verseNum,
         endVerse: currentPageVerses[currentPageVerses.length - 1].verseNum,
       });
@@ -137,12 +148,15 @@ export function AutoPaginatedReader() {
   const curlRef = useRef<PageCurlHandle>(null);
 
   const [bookIndex, setBookIndex] = useState<number>(0);
-  const [paginatedBook, setPaginatedBook] = useState<PaginatedBookResult | null>(null);
+  const [paginatedBook, setPaginatedBook] =
+    useState<PaginatedBookResult | null>(null);
   const [bookName, setBookName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
   const [navModalVisible, setNavModalVisible] = useState<boolean>(false);
-  const [pendingChapterJump, setPendingChapterJump] = useState<number | null>(null);
+  const [pendingChapterJump, setPendingChapterJump] = useState<number | null>(
+    null
+  );
 
   const activeBookMeta = books[bookIndex] || books[0];
 
@@ -177,7 +191,11 @@ export function AutoPaginatedReader() {
           }
 
           // Compute pagination layout with chapter page breaks
-          const result = paginateBookText(chaptersData, SCREEN_HEIGHT, LINE_HEIGHT);
+          const result = paginateBookText(
+            chaptersData,
+            SCREEN_HEIGHT,
+            LINE_HEIGHT
+          );
           setPaginatedBook(result);
         }
       } catch (error) {
@@ -199,8 +217,11 @@ export function AutoPaginatedReader() {
     (targetBookIndex: number, targetChapterNumber: number) => {
       if (targetBookIndex === bookIndex) {
         // Same book: Jump immediately to calculated index
-        if (paginatedBook?.chapterStartIndices[targetChapterNumber] !== undefined) {
-          const targetPageIndex = paginatedBook.chapterStartIndices[targetChapterNumber];
+        if (
+          paginatedBook?.chapterStartIndices[targetChapterNumber] !== undefined
+        ) {
+          const targetPageIndex =
+            paginatedBook.chapterStartIndices[targetChapterNumber];
           curlRef.current?.jumpTo?.(targetPageIndex);
         }
       } else {
@@ -215,7 +236,8 @@ export function AutoPaginatedReader() {
   // Auto-jump after new book completes loading
   useEffect(() => {
     if (!loading && paginatedBook && pendingChapterJump !== null) {
-      const targetPageIndex = paginatedBook.chapterStartIndices[pendingChapterJump] ?? 0;
+      const targetPageIndex =
+        paginatedBook.chapterStartIndices[pendingChapterJump] ?? 0;
       setTimeout(() => {
         curlRef.current?.jumpTo?.(targetPageIndex);
         setPendingChapterJump(null);
@@ -283,7 +305,11 @@ export function AutoPaginatedReader() {
             </Text>
             <Text style={styles.pageText}>{item.text}</Text>
             <Text style={styles.pageFooter}>
-              ምዕራፍ {item.chapterNumber} ({item.startVerse > 0 ? `ቁጥር ${item.startVerse}-${item.endVerse}` : ''}) | ገጽ {item.pageInChapter} / {item.totalChapterPages}
+              ምዕራፍ {item.chapterNumber} (
+              {item.startVerse > 0
+                ? `ቁጥር ${item.startVerse}-${item.endVerse}`
+                : ''}
+              ) | ገጽ {item.pageInChapter} / {item.totalChapterPages}
             </Text>
           </View>
         )}

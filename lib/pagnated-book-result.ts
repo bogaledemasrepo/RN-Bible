@@ -39,14 +39,21 @@ export function paginateBookText(
     const verses = chaptersData[chapNum];
     let currentPageVerses: { verseNum: number; text: string }[] = [];
     let currentLineCount = 0;
-    
-    const chapterPagesRaw: { text: string; startVerse: number; endVerse: number }[] = [];
+
+    const chapterPagesRaw: {
+      text: string;
+      startVerse: number;
+      endVerse: number;
+    }[] = [];
 
     for (const verse of verses) {
       const verseFormatted = `${verse.verseNum}. ${verse.text.trim()}`;
       const estimatedLines = Math.ceil(verseFormatted.length / 42) + 1;
 
-      if (currentLineCount + estimatedLines > maxLinesPerPage && currentPageVerses.length > 0) {
+      if (
+        currentLineCount + estimatedLines > maxLinesPerPage &&
+        currentPageVerses.length > 0
+      ) {
         // Save current page
         const pageText = currentPageVerses
           .map((v) => `${v.verseNum}. ${v.text.trim()}`)

@@ -1,9 +1,9 @@
 import { enableScreens } from 'react-native-screens';
-import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import Sqlite from "./hooks/use-sqlite-context";
-import { AutoPaginatedReader } from "./screens/PageScreen";
+import Sqlite from './hooks/use-sqlite-context';
+import { AutoPaginatedReader } from './screens/PageScreen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 enableScreens();
@@ -29,7 +29,7 @@ export default function App() {
               component={AutoPaginatedReader}
               initialParams={{
                 bookId: 1,
-                bookName: "ኦሪት ዘፍጥረት",
+                bookName: 'ኦሪት ዘፍጥረት',
                 chapterNumber: 1,
               }}
               options={{

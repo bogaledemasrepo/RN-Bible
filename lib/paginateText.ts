@@ -1,8 +1,7 @@
-
 // ==========================================
 // Constants & Layout Config
 
-import { Dimensions } from "react-native";
+import { Dimensions } from 'react-native';
 
 // ==========================================
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -15,7 +14,10 @@ const CHARS_PER_LINE = Math.floor((SCREEN_WIDTH - 48) / (FONT_SIZE * 0.6));
 // ==========================================
 // Helper Functions
 // ==========================================
-export function paginateText(content: string, availableHeight: number): string[] {
+export function paginateText(
+  content: string,
+  availableHeight: number
+): string[] {
   // Account for header, footer & padding inside usable screen space
   const usableHeight = availableHeight - 120;
   const maxLinesPerPage = Math.floor(usableHeight / LINE_HEIGHT);
@@ -28,7 +30,10 @@ export function paginateText(content: string, availableHeight: number): string[]
 
   verses.forEach((verse) => {
     // Estimate lines taken by this verse when wrapping
-    const estimatedLines = Math.max(1, Math.ceil(verse.length / CHARS_PER_LINE));
+    const estimatedLines = Math.max(
+      1,
+      Math.ceil(verse.length / CHARS_PER_LINE)
+    );
 
     if (currentLineCount + estimatedLines > maxLinesPerPage) {
       paginatedPages.push(currentChunk.join('\n'));

@@ -76,9 +76,14 @@ export function NavigationModal({
         {/* Step 2: Select Chapter Grid */}
         {step === 'chapter' && (
           <View style={styles.chapterWrapper}>
-            <Text style={styles.sectionHeader}>{activeBook.name_am} - ምዕራፍ</Text>
+            <Text style={styles.sectionHeader}>
+              {activeBook.name_am} - ምዕራፍ
+            </Text>
             <FlatList
-              data={Array.from({ length: activeBook.total_chapters||1 }, (_, i) => i + 1)}
+              data={Array.from(
+                { length: activeBook.total_chapters || 1 },
+                (_, i) => i + 1
+              )}
               keyExtractor={(item) => item.toString()}
               numColumns={5}
               renderItem={({ item }) => (
@@ -122,7 +127,12 @@ const styles = StyleSheet.create({
   bookName: { fontSize: 16, fontWeight: '500', color: '#1E293B' },
   bookSub: { fontSize: 14, color: '#94A3B8' },
   chapterWrapper: { flex: 1, padding: 16 },
-  sectionHeader: { fontSize: 18, fontWeight: 'bold', marginBottom: 16, color: '#1E293B' },
+  sectionHeader: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    color: '#1E293B',
+  },
   chapterBox: {
     flex: 1,
     margin: 6,

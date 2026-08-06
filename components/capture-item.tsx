@@ -1,9 +1,9 @@
 // capture-item.tsx
-import React, { useRef } from "react";
-import { Dimensions, StyleSheet, View } from "react-native";
-import { makeImageFromView, SkImage } from "@shopify/react-native-skia";
+import React, { useRef } from 'react';
+import { Dimensions, StyleSheet, View } from 'react-native';
+import { makeImageFromView, SkImage } from '@shopify/react-native-skia';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function CaptureItem({
   children,
@@ -29,7 +29,7 @@ export default function CaptureItem({
             }
           }
         } catch (e) {
-          console.warn("Snapshot capture failed:", e);
+          console.warn('Snapshot capture failed:', e);
         }
       });
     });

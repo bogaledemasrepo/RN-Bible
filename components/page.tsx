@@ -55,7 +55,6 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   // Windowed Texture Cache: Keep maximum of 5 images in memory
   const [viewImages, setViewImages] = useState<Record<number, SkImage>>({});
   const [activeJSIndex, setActiveJSIndex] = useState<number>(initialIndex);
-  const [animDirection, setAnimDirection] = useState<"next" | "prev">("next");
 
   const currentIndex = useSharedValue(initialIndex);
   const img1Index = useSharedValue(initialIndex);
@@ -167,7 +166,6 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         }
 
         currentAnim.value = "prev";
-        runOnJS(setAnimDirection)("prev");
         img1Index.value = currentIndex.value;
         progress.value = 1;
       } else {
@@ -176,7 +174,6 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
           return;
         }
         currentAnim.value = "next";
-        runOnJS(setAnimDirection)("next");
         img1Index.value = currentIndex.value;
         progress.value = 0;
       }
@@ -313,46 +310,8 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
               );
             })}
         </View>
+
         <Canvas style={styles.canvas}>
-          <Fill color={"#FAF8F5"}>
-            <Shader source={shaderEffect} uniforms={uniforms}>
-              {animDirection === "next" ? (
-                <>
-                  {/* Forward Swipe: img1 is top unpeeling page, img2 is page below */}
-                  <ImageShader
-                    image={img1}
-                    fit="cover"
-                    width={SCREEN_WIDTH}
-                    height={SCREEN_HEIGHT}
-                  />
-                  <ImageShader
-                    image={img2}
-                    fit="cover"
-                    width={SCREEN_WIDTH}
-                    height={SCREEN_HEIGHT}
-                  />
-                </>
-              ) : (
-                <>
-                  {/* Reverse Swipe: img2 (Previous Page) peels from top, img1 (Current Page) stays fixed below */}
-                  <ImageShader
-                    image={img2}
-                    fit="cover"
-                    width={SCREEN_WIDTH}
-                    height={SCREEN_HEIGHT}
-                  />
-                  <ImageShader
-                    image={img1}
-                    fit="cover"
-                    width={SCREEN_WIDTH}
-                    height={SCREEN_HEIGHT}
-                  />
-                </>
-              )}
-            </Shader>
-          </Fill>
-        </Canvas>
-        {/* <Canvas style={styles.canvas}>
           <Fill color={"#FAF8F5"}>
             <Shader source={shaderEffect} uniforms={uniforms}>
               <ImageShader
@@ -369,7 +328,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
               />
             </Shader>
           </Fill>
-        </Canvas> */}
+        </Canvas>
       </View>
     </GestureDetector>
   );
