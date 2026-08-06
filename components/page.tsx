@@ -62,6 +62,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   const currentAnim = useSharedValue<"next" | "prev">("next");
   const startX = useSharedValue(0);
   const progress = useSharedValue(0);
+  const isBoundarySwipe = useSharedValue(false);
 
   // Sync state when dataset changes
   useEffect(() => {
@@ -142,6 +143,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     .manualActivation(true)
     .onTouchesDown((e) => {
       startX.value = e.allTouches[0].x;
+      isBoundarySwipe.value = false; // Reset boundary lock on touch
     })
     .onTouchesMove((e, state) => {
       const deltaX = e.allTouches[0].x - startX.value;
@@ -153,6 +155,13 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
       const isSwipingRight = e.x > startX.value;
 
       if (isSwipingRight) {
+        if (currentIndex.value === 0) {
+          isBoundarySwipe.value = true; // 🔒 Lock gesture updates
+          if (onReachStart) {
+            runOnJS(onReachStart)();
+          }
+          return;
+        }
         if (currentIndex.value === 0) {
           if (onReachStart) runOnJS(onReachStart)();
           return;
@@ -170,6 +179,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         progress.value = 1;
       } else {
         if (currentIndex.value >= dataLength - 1) {
+          isBoundarySwipe.value = true;
           if (onReachEnd) runOnJS(onReachEnd)();
           return;
         }
@@ -181,6 +191,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
       topFlag.value = e.y < SCREEN_HEIGHT / 2 ? 0 : 1;
     })
     .onChange((e) => {
+      if (isBoundarySwipe.value) return; // Ignore drag if at edge!
       if (currentAnim.value === "prev") {
         const deltaX = e.x - startX.value;
         progress.value = Math.max(0, Math.min(1, 1 - deltaX / SCREEN_WIDTH));
@@ -190,6 +201,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
       }
     })
     .onEnd((e) => {
+      if (isBoundarySwipe.value) return; // Ignore gesture release!
       const deltaX = e.x - startX.value;
       const passedThreshold = Math.abs(deltaX) > SCREEN_WIDTH / 3;
 
