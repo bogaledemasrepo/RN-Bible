@@ -55,6 +55,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   // Windowed Texture Cache: Keep maximum of 5 images in memory
   const [viewImages, setViewImages] = useState<Record<number, SkImage>>({});
   const [activeJSIndex, setActiveJSIndex] = useState<number>(initialIndex);
+  const [animDirection, setAnimDirection] = useState<"next" | "prev">("next");
 
   const currentIndex = useSharedValue(initialIndex);
   const img1Index = useSharedValue(initialIndex);
@@ -90,32 +91,32 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     [progress, topFlag]
   );
 
-  // page.tsx
 
-  // Front/Back Texture Derived Values with Flicker-Free Fallbacks
+
+
   const img1 = useDerivedValue(() => {
     const idx = img1Index.value;
-    // During reverse animation, img1 represents the underlying (previous) page
+
     if (currentAnim.value === "prev") {
       const prevIdx = idx - 1;
       return viewImages[prevIdx] ?? viewImages[idx] ?? null;
     }
-    // During forward animation, img1 represents the current top page
+
     return viewImages[idx] ?? null;
   }, [viewImages, img1Index, currentAnim]);
 
   const img2 = useDerivedValue(() => {
     const idx = img1Index.value;
-    // During reverse animation, img2 represents the top page unrolling back into place
+
     if (currentAnim.value === "prev") {
       return viewImages[idx] ?? img1.value;
     }
-    // During forward animation, img2 represents the next incoming page
+
     const nextIdx = idx + 1;
     return viewImages[nextIdx] ?? img1.value;
   }, [viewImages, img1Index, currentAnim, img1]);
 
-  // Memory Eviction Strategy: Purge textures outside active window [active - 2, active + 2]
+
   const handleSetImage = useCallback(
     (img: SkImage, index: number) => {
       setViewImages((prev) => {
@@ -123,7 +124,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         const minKeep = activeJSIndex - 2;
         const maxKeep = activeJSIndex + 2;
 
-        // Keep existing valid cache within current window
+
         Object.keys(prev).forEach((key) => {
           const k = Number(key);
           if (k >= minKeep && k <= maxKeep) {
@@ -154,26 +155,28 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 
       if (isSwipingRight) {
         if (currentIndex.value === 0) {
-          if (onReachStart) runOnJS(onReachStart)(); //
+          if (onReachStart) runOnJS(onReachStart)();
           return;
         }
 
         const prevIdx = currentIndex.value - 1;
-        // Ensure the backward texture exists before starting curl animation
+
         if (!viewImages[prevIdx]) {
-          // Texture isn't ready yet — do not start animation to prevent blank render
+
           return;
         }
 
-        currentAnim.value = "prev"; //
-        img1Index.value = currentIndex.value; //[cite: 1]
-        progress.value = 1; //[cite: 1]
+        currentAnim.value = "prev";
+        runOnJS(setAnimDirection)("prev");
+        img1Index.value = currentIndex.value;
+        progress.value = 1;
       } else {
         if (currentIndex.value >= dataLength - 1) {
           if (onReachEnd) runOnJS(onReachEnd)();
           return;
         }
         currentAnim.value = "next";
+        runOnJS(setAnimDirection)("next");
         img1Index.value = currentIndex.value;
         progress.value = 0;
       }
@@ -310,8 +313,46 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
               );
             })}
         </View>
-
         <Canvas style={styles.canvas}>
+          <Fill color={"#FAF8F5"}>
+            <Shader source={shaderEffect} uniforms={uniforms}>
+              {animDirection === "next" ? (
+                <>
+                  {/* Forward Swipe: img1 is top unpeeling page, img2 is page below */}
+                  <ImageShader
+                    image={img1}
+                    fit="cover"
+                    width={SCREEN_WIDTH}
+                    height={SCREEN_HEIGHT}
+                  />
+                  <ImageShader
+                    image={img2}
+                    fit="cover"
+                    width={SCREEN_WIDTH}
+                    height={SCREEN_HEIGHT}
+                  />
+                </>
+              ) : (
+                <>
+                  {/* Reverse Swipe: img2 (Previous Page) peels from top, img1 (Current Page) stays fixed below */}
+                  <ImageShader
+                    image={img2}
+                    fit="cover"
+                    width={SCREEN_WIDTH}
+                    height={SCREEN_HEIGHT}
+                  />
+                  <ImageShader
+                    image={img1}
+                    fit="cover"
+                    width={SCREEN_WIDTH}
+                    height={SCREEN_HEIGHT}
+                  />
+                </>
+              )}
+            </Shader>
+          </Fill>
+        </Canvas>
+        {/* <Canvas style={styles.canvas}>
           <Fill color={"#FAF8F5"}>
             <Shader source={shaderEffect} uniforms={uniforms}>
               <ImageShader
@@ -328,7 +369,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
               />
             </Shader>
           </Fill>
-        </Canvas>
+        </Canvas> */}
       </View>
     </GestureDetector>
   );
