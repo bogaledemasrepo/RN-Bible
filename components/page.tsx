@@ -21,6 +21,7 @@ import {
   useSharedValue,
   withTiming,
   runOnJS,
+  cancelAnimation,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
@@ -142,6 +143,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   const gesture = Gesture.Pan()
     .manualActivation(true)
     .onTouchesDown((e) => {
+      cancelAnimation(progress);
       startX.value = e.allTouches[0].x;
       isBoundarySwipe.value = false; // Reset boundary lock on touch
     })
@@ -155,6 +157,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
       const isSwipingRight = e.x > startX.value;
 
       if (isSwipingRight) {
+        // Edge Case 1: First page boundary check
         if (currentIndex.value === 0) {
           isBoundarySwipe.value = true; // 🔒 Lock gesture updates
           if (onReachStart) {
@@ -162,15 +165,11 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
           }
           return;
         }
-        if (currentIndex.value === 0) {
-          if (onReachStart) runOnJS(onReachStart)();
-          return;
-        }
 
+        // Edge Case 4: Previous page texture readiness check
         const prevIdx = currentIndex.value - 1;
-
         if (!viewImages[prevIdx]) {
-
+          isBoundarySwipe.value = true; // 🔒 Lock gesture if texture is not ready
           return;
         }
 
@@ -178,11 +177,22 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         img1Index.value = currentIndex.value;
         progress.value = 1;
       } else {
+        // Edge Case 2: Last page boundary check
         if (currentIndex.value >= dataLength - 1) {
-          isBoundarySwipe.value = true;
-          if (onReachEnd) runOnJS(onReachEnd)();
+          isBoundarySwipe.value = true; // 🔒 Lock gesture updates
+          if (onReachEnd) {
+            runOnJS(onReachEnd)();
+          }
           return;
         }
+
+        // Edge Case 4: Next page texture readiness check
+        const nextIdx = currentIndex.value + 1;
+        if (!viewImages[nextIdx]) {
+          isBoundarySwipe.value = true; // 🔒 Lock gesture if texture is not ready
+          return;
+        }
+
         currentAnim.value = "next";
         img1Index.value = currentIndex.value;
         progress.value = 0;

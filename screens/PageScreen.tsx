@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,42 +10,13 @@ import {
 import { useSQLiteContext } from 'expo-sqlite';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { PageCurlHandle } from '../types';
+import { FONT_SIZE, LINE_HEIGHT, PageCurlHandle, PageItem, PaginatedBookResult, ParsedVerse, RawVerseRow } from '../types';
 import { books } from '../constants';
 import PageCurl from '../components/page';
 import { NavigationModal } from '../components/navigation-modal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const FONT_SIZE = 16;
-const LINE_HEIGHT = 24;
-
-interface RawVerseRow {
-  chapter_number: number;
-  verse_number: number;
-  verse_text: string;
-  name_am: string;
-}
-
-export interface PageItem {
-  text: string;
-  chapterNumber: number;
-  startVerse: number;
-  endVerse: number;
-  pageInChapter: number;
-  totalChapterPages: number;
-}
-
-interface PaginatedBookResult {
-  allPages: PageItem[];
-  chapterStartIndices: Record<number, number>;
-  totalChapters: number;
-}
-
-interface ParsedVerse {
-  verseNum: number;
-  text: string;
-}
 
 // ==========================================
 // Helper: Paginate Full Book with Clean Chapter Breaks & Verse Bounds
@@ -152,7 +123,7 @@ export function AutoPaginatedReader() {
     useState<PaginatedBookResult | null>(null);
   const [bookName, setBookName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
-
+  const [navDirection, setNavDirection] = useState<'next' | 'prev' | 'jump'>('next');
   const [navModalVisible, setNavModalVisible] = useState<boolean>(false);
   const [pendingChapterJump, setPendingChapterJump] = useState<number | null>(
     null
@@ -246,17 +217,30 @@ export function AutoPaginatedReader() {
   }, [loading, paginatedBook, pendingChapterJump]);
 
   // Handle Reader Book Boundaries
+
   const handleReachEnd = useCallback(() => {
     if (bookIndex < books.length - 1) {
+      setNavDirection('next'); // 👈 Set direction to next
       setBookIndex((prev) => prev + 1);
     }
   }, [bookIndex]);
 
   const handleReachStart = useCallback(() => {
     if (bookIndex > 0) {
+      setNavDirection('prev'); // 👈 Set direction to prev
       setBookIndex((prev) => prev - 1);
     }
   }, [bookIndex]);
+
+  const initialIndex = useMemo(() => {
+    if (!paginatedBook || paginatedBook.allPages.length === 0) return 0;
+
+    if (navDirection === 'prev') {
+      return paginatedBook.allPages.length - 1; // 🎯 Land on LAST page
+    }
+
+    return 0; // Default to first page for forward navigation
+  }, [paginatedBook, navDirection]);
 
   if (loading || !paginatedBook) {
     return (
@@ -291,10 +275,10 @@ export function AutoPaginatedReader() {
 
       {/* Skia 3D Page Reader */}
       <PageCurl
-        key={`book-${activeBookMeta.book_id}`}
+        key={`book-${activeBookMeta.book_id}-${navDirection}`} // Re-initializes clean texture window
         ref={curlRef}
         data={paginatedBook.allPages}
-        initialIndex={0}
+        initialIndex={initialIndex} // 👈 Dynamic starting index
         onReachEnd={handleReachEnd}
         onReachStart={handleReachStart}
         gestureEnabled={true}

@@ -54,3 +54,34 @@ export interface PageCurlHandle {
   prev: () => void;
   jumpTo: (targetIndex: number) => void;
 }
+
+
+export const FONT_SIZE = 16;
+export const LINE_HEIGHT = 24;
+
+export interface RawVerseRow {
+  chapter_number: number;
+  verse_number: number;
+  verse_text: string;
+  name_am: string;
+}
+
+export interface PageItem {
+  text: string;
+  chapterNumber: number;
+  startVerse: number;
+  endVerse: number;
+  pageInChapter: number;
+  totalChapterPages: number;
+}
+
+export interface PaginatedBookResult {
+  allPages: PageItem[];
+  chapterStartIndices: Record<number, number>;
+  totalChapters: number;
+}
+
+export interface ParsedVerse {
+  verseNum: number;
+  text: string;
+}
