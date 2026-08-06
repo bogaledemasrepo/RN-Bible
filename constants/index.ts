@@ -209,3 +209,62 @@ export const books = [{ "book_id": 1, "name_am": "ኦሪት ዘፍጥረት", "n
 { "book_id": 79, "name_am": "የያዕቆን መልእክት", "name_en": "James", "short_name_am": "ያዕ", "short_name_en": "James", "testament": "new", "total_chapters": 14 },
 { "book_id": 80, "name_am": "የይሁዳ መልእክት", "name_en": "Jude", "short_name_am": "ይሁዳ", "short_name_en": "Jud", "testament": "new", "total_chapters": 3 },
 { "book_id": 81, "name_am": "የዮሐንስ ራዕይ", "name_en": "Revelation", "short_name_am": "ራዕ", "short_name_en": "Rev", "testament": "new", "total_chapters": 39 }]
+
+
+export interface Book{
+    book_id: number;
+    name_am: string;
+    name_en: string;
+    short_name_am: string;
+    short_name_en: string;
+    testament: string;
+}
+
+// types.ts or top of App.tsx
+export type RootStackParamList = {
+  Home: undefined;
+  Page: {
+    bookId: number;
+    bookName: string;
+    chapterNumber: number;
+  };
+};
+
+export interface Verse {
+  verse_number: number;
+  verse_text: string;
+}
+
+// constants/types.ts (or wherever your Book type lives)
+export interface Book {
+  book_id: number;
+  name_am: string;
+  name_en: string;
+  short_name_am: string;
+  short_name_en: string;
+  testament: string;
+  total_chapters: number; // <-- Add this
+}
+
+export type RootDrawerParamList = {
+  Home: undefined; // No params expected
+  BookReader: { bookId: number; bookName: string; chapterNumber: number }; // Params expected
+};
+
+export type ItemProps = {
+  children: React.ReactNode
+  setImages: (img: any) => void
+}
+
+export type RenderPageProps = {
+  item: any
+  index: number
+}
+
+
+// types.ts
+export interface PageCurlHandle {
+  next: () => void;
+  prev: () => void;
+  jumpTo: (targetIndex: number) => void;
+}
