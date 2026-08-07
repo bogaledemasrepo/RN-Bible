@@ -14,6 +14,7 @@ import { FONT_SIZE, LINE_HEIGHT, PageCurlHandle, PageItem, PaginatedBookResult, 
 import { books } from '../constants';
 import PageCurl from '../components/page';
 import { NavigationModal } from '../components/navigation-modal';
+import { ProfessionalLoader } from '../components/ProfessionalLoader';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -30,7 +31,7 @@ function paginateBookText(
   const chapterStartIndices: Record<number, number> = {};
 
   // Space reserved for headers & footers (paddingTop + paddingBottom + header offset)
-  const availableHeight = containerHeight - 120;
+  const availableHeight = containerHeight - 145;
   const maxLinesPerPage = Math.floor(availableHeight / lineHeight);
 
   const chapterNumbers = Object.keys(chaptersData)
@@ -185,29 +186,29 @@ export function AutoPaginatedReader() {
     loadAndPaginateBook(activeBookMeta.book_id);
   }, [activeBookMeta.book_id, loadAndPaginateBook]);
 
- // Handle selection from NavigationModal
-const handleJumpToTarget = useCallback(
-  (targetBookIndex: number, targetChapterNumber: number) => {
-    setNavDirection('jump'); // 👈 Set direction state
+  // Handle selection from NavigationModal
+  const handleJumpToTarget = useCallback(
+    (targetBookIndex: number, targetChapterNumber: number) => {
+      setNavDirection('jump'); // 👈 Set direction state
 
-    if (targetBookIndex === bookIndex) {
-      // Same book: Jump immediately to calculated index
-      if (
-        paginatedBook?.chapterStartIndices[targetChapterNumber] !== undefined
-      ) {
-        const pageIdx = paginatedBook.chapterStartIndices[targetChapterNumber];
-        setTargetPageIndex(pageIdx);
-        curlRef.current?.jumpTo?.(pageIdx);
+      if (targetBookIndex === bookIndex) {
+        // Same book: Jump immediately to calculated index
+        if (
+          paginatedBook?.chapterStartIndices[targetChapterNumber] !== undefined
+        ) {
+          const pageIdx = paginatedBook.chapterStartIndices[targetChapterNumber];
+          setTargetPageIndex(pageIdx);
+          curlRef.current?.jumpTo?.(pageIdx);
+        }
+      } else {
+        // Different book: Queue target chapter jump and trigger book load
+        setPendingChapterJump(targetChapterNumber);
+        setBookIndex(targetBookIndex);
       }
-    } else {
-      // Different book: Queue target chapter jump and trigger book load
-      setPendingChapterJump(targetChapterNumber);
-      setBookIndex(targetBookIndex);
-    }
-    setNavModalVisible(false); // Close modal
-  },
-  [bookIndex, paginatedBook]
-);
+      setNavModalVisible(false); // Close modal
+    },
+    [bookIndex, paginatedBook]
+  );
 
   // Auto-jump after new book completes loading
   useEffect(() => {
@@ -308,10 +309,7 @@ const handleJumpToTarget = useCallback(
   if (loading || !paginatedBook) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8b0000" />
-        <Text style={styles.loadingText}>
-          {activeBookMeta.name_am} በመጫን ላይ...
-        </Text>
+        <ProfessionalLoader />
       </View>
     );
   }
@@ -407,8 +405,9 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT - 44,
     backgroundColor: '#FAF8F5',
     paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 28,
+    paddingTop: 16,     // 👈 Slightly reduced top padding
+    paddingBottom: 20,  // 👈 Explicit bottom padding ensures footer stays inside bounds
+    justifyContent: 'space-between', // 👈 Keeps header, content, and footer anchored properly
   },
   chapterTitle: {
     fontSize: 20,
@@ -419,6 +418,7 @@ const styles = StyleSheet.create({
   },
   pageText: {
     flex: 1,
+    flexShrink: 1,
     fontSize: FONT_SIZE,
     lineHeight: LINE_HEIGHT,
     color: '#1e293b',
