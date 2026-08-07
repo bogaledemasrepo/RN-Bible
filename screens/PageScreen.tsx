@@ -349,8 +349,8 @@ export function AutoPaginatedReader() {
             <Text style={styles.chapterTitle}>
               {`${bookName} - ምዕራፍ ${item.chapterNumber}`}
             </Text>
-            <Text style={styles.pageText}>{item.text}</Text>
-            <Text style={styles.pageFooter}>
+            <Text style={styles.pageText}>{item.text}</Text> 
+            <Text style={[styles.pageFooter,{position:"absolute",bottom:100,left:"20%"}]}>
               ምዕራፍ {item.chapterNumber} (
               {item.startVerse > 0
                 ? `ቁጥር ${item.startVerse}-${item.endVerse}`
@@ -368,6 +368,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F5',
+    position:"relative",
   },
   loadingContainer: {
     flex: 1,
