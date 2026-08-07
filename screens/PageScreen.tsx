@@ -10,7 +10,7 @@ import {
 import { useSQLiteContext } from 'expo-sqlite';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { FONT_SIZE, LINE_HEIGHT, PageCurlHandle, PageItem, PaginatedBookResult, ParsedVerse, RawVerseRow } from '../types';
+import { FONT_SIZE, LINE_HEIGHT, PageCurlHandle, PageItem, PaginatedBookResult, ParsedVerse, RawVerseRow, SavedProgressRow } from '../types';
 import { books } from '../constants';
 import PageCurl from '../components/page';
 import { NavigationModal } from '../components/navigation-modal';
@@ -123,7 +123,9 @@ export function AutoPaginatedReader() {
     useState<PaginatedBookResult | null>(null);
   const [bookName, setBookName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
-  const [navDirection, setNavDirection] = useState<'next' | 'prev' | 'jump'>('next');
+  const [restoredPageIndex, setRestoredPageIndex] = useState<number | null>(null);
+  const [targetPageIndex, setTargetPageIndex] = useState<number | null>(null);
+  const [navDirection, setNavDirection] = useState<'next' | 'prev' | 'jump'>('jump');
   const [navModalVisible, setNavModalVisible] = useState<boolean>(false);
   const [pendingChapterJump, setPendingChapterJump] = useState<number | null>(
     null
@@ -183,26 +185,29 @@ export function AutoPaginatedReader() {
     loadAndPaginateBook(activeBookMeta.book_id);
   }, [activeBookMeta.book_id, loadAndPaginateBook]);
 
-  // Handle selection from NavigationModal
-  const handleJumpToTarget = useCallback(
-    (targetBookIndex: number, targetChapterNumber: number) => {
-      if (targetBookIndex === bookIndex) {
-        // Same book: Jump immediately to calculated index
-        if (
-          paginatedBook?.chapterStartIndices[targetChapterNumber] !== undefined
-        ) {
-          const targetPageIndex =
-            paginatedBook.chapterStartIndices[targetChapterNumber];
-          curlRef.current?.jumpTo?.(targetPageIndex);
-        }
-      } else {
-        // Different book: Queue target chapter jump and trigger book load
-        setPendingChapterJump(targetChapterNumber);
-        setBookIndex(targetBookIndex);
+ // Handle selection from NavigationModal
+const handleJumpToTarget = useCallback(
+  (targetBookIndex: number, targetChapterNumber: number) => {
+    setNavDirection('jump'); // 👈 Set direction state
+
+    if (targetBookIndex === bookIndex) {
+      // Same book: Jump immediately to calculated index
+      if (
+        paginatedBook?.chapterStartIndices[targetChapterNumber] !== undefined
+      ) {
+        const pageIdx = paginatedBook.chapterStartIndices[targetChapterNumber];
+        setTargetPageIndex(pageIdx);
+        curlRef.current?.jumpTo?.(pageIdx);
       }
-    },
-    [bookIndex, paginatedBook]
-  );
+    } else {
+      // Different book: Queue target chapter jump and trigger book load
+      setPendingChapterJump(targetChapterNumber);
+      setBookIndex(targetBookIndex);
+    }
+    setNavModalVisible(false); // Close modal
+  },
+  [bookIndex, paginatedBook]
+);
 
   // Auto-jump after new book completes loading
   useEffect(() => {
@@ -216,31 +221,89 @@ export function AutoPaginatedReader() {
     }
   }, [loading, paginatedBook, pendingChapterJump]);
 
-  // Handle Reader Book Boundaries
+  // 3. Save Updated Position to SQLite on Page Change
+  const handlePageChange = useCallback(
+    async (pageIdx: number) => {
+      try {
+        await db.runAsync(
+          `INSERT INTO user_progress (id, book_index, page_index)
+           VALUES (1, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             book_index = excluded.book_index,
+             page_index = excluded.page_index,
+             updated_at = CURRENT_TIMESTAMP;`,
+          [bookIndex, pageIdx]
+        );
+      } catch (error) {
+        console.warn('Failed to save page position to SQLite:', error);
+      }
+    },
+    [db, bookIndex]
+  );
 
+
+  // User swipes to next book
   const handleReachEnd = useCallback(() => {
     if (bookIndex < books.length - 1) {
-      setNavDirection('next'); // 👈 Set direction to next
+      setNavDirection('next');
+      setTargetPageIndex(null);
       setBookIndex((prev) => prev + 1);
     }
   }, [bookIndex]);
 
+  // User swipes to previous book
   const handleReachStart = useCallback(() => {
     if (bookIndex > 0) {
-      setNavDirection('prev'); // 👈 Set direction to prev
+      setNavDirection('prev');
+      setTargetPageIndex(null);
       setBookIndex((prev) => prev - 1);
     }
   }, [bookIndex]);
 
+  useEffect(() => {
+    async function restorePosition() {
+      try {
+        const row = await db.getFirstAsync<{ book_index: number; page_index: number }>(
+          `SELECT book_index, page_index FROM user_progress WHERE id = 1;`
+        );
+
+        if (row && row.book_index >= 0 && row.book_index < books.length) {
+          setNavDirection('jump');
+          setBookIndex(row.book_index);
+          setTargetPageIndex(row.page_index);
+        } else {
+          // Fallback: Default to First Book, First Page
+          setNavDirection('jump');
+          setBookIndex(0);
+          setTargetPageIndex(0);
+        }
+      } catch (error) {
+        console.warn('Failed to read saved progress from SQLite, falling back to page 0:', error);
+        setNavDirection('jump');
+        setBookIndex(0);
+        setTargetPageIndex(0);
+      }
+    }
+
+    restorePosition();
+  }, [db]);
+
   const initialIndex = useMemo(() => {
     if (!paginatedBook || paginatedBook.allPages.length === 0) return 0;
 
+    // 1. Swiping backward across books
     if (navDirection === 'prev') {
-      return paginatedBook.allPages.length - 1; // 🎯 Land on LAST page
+      return paginatedBook.allPages.length - 1;
     }
 
-    return 0; // Default to first page for forward navigation
-  }, [paginatedBook, navDirection]);
+    // 2. Jumping to saved position or chapter navigation
+    if (navDirection === 'jump' && targetPageIndex !== null) {
+      return Math.max(0, Math.min(targetPageIndex, paginatedBook.allPages.length - 1));
+    }
+
+    // 3. Swiping forward across books ('next')
+    return 0;
+  }, [paginatedBook, navDirection, targetPageIndex]);
 
   if (loading || !paginatedBook) {
     return (
@@ -270,15 +333,16 @@ export function AutoPaginatedReader() {
       <NavigationModal
         visible={navModalVisible}
         onClose={() => setNavModalVisible(false)}
-        onSelectTarget={handleJumpToTarget}
+        onSelectTarget={handleJumpToTarget} // 👈 1. Chapter/Book picker handler
       />
 
       {/* Skia 3D Page Reader */}
       <PageCurl
-        key={`book-${activeBookMeta.book_id}-${navDirection}`} // Re-initializes clean texture window
+        key={`book-${activeBookMeta.book_id}-${navDirection}`}
         ref={curlRef}
         data={paginatedBook.allPages}
-        initialIndex={initialIndex} // 👈 Dynamic starting index
+        initialIndex={initialIndex}
+        onPageChange={handlePageChange} // 👈 HERE: Saves page number on every turn
         onReachEnd={handleReachEnd}
         onReachStart={handleReachStart}
         gestureEnabled={true}

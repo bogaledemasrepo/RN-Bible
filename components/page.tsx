@@ -35,6 +35,7 @@ type Props = {
   data?: any[];
   initialIndex?: number;
   onReachStart?: () => void;
+  onPageChange?: (pageIdx: number) => Promise<void>;
   onReachEnd?: () => void;
   renderPage?: (props: RenderPageProps) => React.ReactNode;
   gestureEnabled?: boolean;
@@ -46,6 +47,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     initialIndex = 0,
     renderPage,
     gestureEnabled = true,
+    onPageChange,
     onReachEnd,
     onReachStart,
   }: Props,
@@ -74,9 +76,16 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     progress.value = 0;
   }, [data, initialIndex]);
 
-  const updateJSIndex = useCallback((idx: number) => {
-    setActiveJSIndex(idx);
-  }, []);
+  // Helper function called whenever page index changes on JS thread
+  const updateJSIndex = useCallback(
+    (idx: number) => {
+      setActiveJSIndex(idx);
+      if (onPageChange) {
+        onPageChange(idx); // 👈 2. Call callback on every JS index update
+      }
+    },
+    [onPageChange]
+  );
 
   const shaderEffect = useMemo(
     () => Skia.RuntimeEffect.Make(pageCurlShader)!,
@@ -311,6 +320,21 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 
     return indices;
   }, [activeJSIndex, dataLength]);
+
+  // Sync initialIndex when data or initialIndex prop changes
+  useEffect(() => {
+    setViewImages({});
+    currentIndex.value = initialIndex;
+    img1Index.value = initialIndex;
+    setActiveJSIndex(initialIndex);
+    progress.value = 0;
+    isBoundarySwipe.value = false;
+
+    // Report initial index to parent
+    if (onPageChange) {
+      onPageChange(initialIndex); // 👈 3. Call on initial mount/book change
+    }
+  }, [data, initialIndex, currentIndex, img1Index, progress, isBoundarySwipe, onPageChange]);
 
   return (
     <GestureDetector gesture={gesture}>

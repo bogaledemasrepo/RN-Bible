@@ -41,7 +41,7 @@ export function Header() {
 }
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
-  const DATABASE_VERSION = 1;
+  const DATABASE_VERSION = 2; // Bump database version
 
   const dbResult = await db.getFirstAsync<{ user_version: number }>(
     'PRAGMA user_version'
@@ -50,9 +50,27 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   const currentVersion = dbResult?.user_version ?? 0;
 
   if (currentVersion >= DATABASE_VERSION) {
-    return console.log('Database up to date!');
+    return;
   }
 
-  // Future version migrations (e.g. schema changes for existing users)
-  await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION};`);
+  // Create table to persist user reader progress
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS user_progress (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      book_index INTEGER NOT NULL,
+      page_index INTEGER NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    PRAGMA user_version = ${DATABASE_VERSION};
+  `);
+
+  // Add inside your migrateDbIfNeeded function
+  await db.execAsync(`
+  CREATE TABLE IF NOT EXISTS user_progress (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    book_index INTEGER NOT NULL,
+    page_index INTEGER NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+`);
 }

@@ -85,3 +85,7 @@ export interface ParsedVerse {
   verseNum: number;
   text: string;
 }
+export interface SavedProgressRow {
+  book_index: number;
+  page_index: number;
+}
