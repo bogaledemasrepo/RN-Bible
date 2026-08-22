@@ -34,7 +34,7 @@ export function NavigationModal({
 
   const handleChapterSelect = (chapNum: number) => {
     onSelectTarget(selectedBookIndex, chapNum);
-    setStep('book'); // Reset step for next open
+    setStep('book');
     onClose();
   };
 

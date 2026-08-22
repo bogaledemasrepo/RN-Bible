@@ -55,9 +55,10 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
 
   // Create table to persist user reader progress
   await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS user_progress (
+      CREATE TABLE IF NOT EXISTS user_progress (
       id INTEGER PRIMARY KEY DEFAULT 1,
-      book_index INTEGER NOT NULL,
+      book_id INTEGER NOT NULL,
+      chapter INTEGER NOT NULL,
       page_index INTEGER NOT NULL,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -67,10 +68,11 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   // Add inside your migrateDbIfNeeded function
   await db.execAsync(`
   CREATE TABLE IF NOT EXISTS user_progress (
-    id INTEGER PRIMARY KEY DEFAULT 1,
-    book_index INTEGER NOT NULL,
-    page_index INTEGER NOT NULL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  book_id INTEGER NOT NULL,
+  chapter INTEGER NOT NULL,
+  page_index INTEGER NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 `);
 }

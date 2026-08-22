@@ -331,9 +331,9 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     isBoundarySwipe.value = false;
 
     // Report initial index to parent
-    if (onPageChange) {
-      onPageChange(initialIndex); // 👈 3. Call on initial mount/book change
-    }
+    // if (onPageChange) {
+    //   onPageChange(initialIndex); // 👈 3. Call on initial mount/book change
+    // }
   }, [data, initialIndex, currentIndex, img1Index, progress, isBoundarySwipe, onPageChange]);
 
   return (

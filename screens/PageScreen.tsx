@@ -4,13 +4,12 @@ import {
   View,
   Text,
   Dimensions,
-  ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { FONT_SIZE, LINE_HEIGHT, PageCurlHandle, PageItem, PaginatedBookResult, ParsedVerse, RawVerseRow, SavedProgressRow } from '../types';
+import { FONT_SIZE, LINE_HEIGHT, PageCurlHandle, PageItem, PaginatedBookResult, ParsedVerse, RawVerseRow } from '../types';
 import { books } from '../constants';
 import PageCurl from '../components/page';
 import { NavigationModal } from '../components/navigation-modal';
@@ -124,7 +123,7 @@ export function AutoPaginatedReader() {
     useState<PaginatedBookResult | null>(null);
   const [bookName, setBookName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
-  const [restoredPageIndex, setRestoredPageIndex] = useState<number | null>(null);
+  const [isRestoring, setIsRestoring] = useState<boolean>(true);
   const [targetPageIndex, setTargetPageIndex] = useState<number | null>(null);
   const [navDirection, setNavDirection] = useState<'next' | 'prev' | 'jump'>('jump');
   const [navModalVisible, setNavModalVisible] = useState<boolean>(false);
@@ -224,22 +223,34 @@ export function AutoPaginatedReader() {
 
   // 3. Save Updated Position to SQLite on Page Change
   const handlePageChange = useCallback(
-    async (pageIdx: number) => {
+    async (globalIdx: number) => {
+      // 👈 Guard: Do not overwrite SQLite while initial restoration is in progress
+      if (isRestoring || loading || !paginatedBook || !paginatedBook.allPages[globalIdx]) {
+        return;
+      }
+
+      const currentPage = paginatedBook.allPages[globalIdx];
+
       try {
         await db.runAsync(
-          `INSERT INTO user_progress (id, book_index, page_index)
-           VALUES (1, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             book_index = excluded.book_index,
-             page_index = excluded.page_index,
-             updated_at = CURRENT_TIMESTAMP;`,
-          [bookIndex, pageIdx]
+          `INSERT INTO user_progress (id, book_id, chapter, page_index)
+         VALUES (1, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           book_id = excluded.book_id,
+           chapter = excluded.chapter,
+           page_index = excluded.page_index,
+           updated_at = CURRENT_TIMESTAMP;`,
+          [
+            activeBookMeta.book_id,
+            currentPage.chapterNumber,
+            globalIdx,
+          ]
         );
       } catch (error) {
-        console.warn('Failed to save page position to SQLite:', error);
+        console.warn('Failed to save progress:', error);
       }
     },
-    [db, bookIndex]
+    [db, paginatedBook, activeBookMeta.book_id, isRestoring, loading]
   );
 
 
@@ -262,31 +273,41 @@ export function AutoPaginatedReader() {
   }, [bookIndex]);
 
   useEffect(() => {
-    async function restorePosition() {
+    async function restoreSavedProgress() {
       try {
-        const row = await db.getFirstAsync<{ book_index: number; page_index: number }>(
-          `SELECT book_index, page_index FROM user_progress WHERE id = 1;`
-        );
+        const row = await db.getFirstAsync<{
+          book_id: number;
+          chapter: number;
+          page_index: number;
+        }>(`SELECT book_id, chapter, page_index FROM user_progress WHERE id = 1;`);
 
-        if (row && row.book_index >= 0 && row.book_index < books.length) {
-          setNavDirection('jump');
-          setBookIndex(row.book_index);
-          setTargetPageIndex(row.page_index);
-        } else {
-          // Fallback: Default to First Book, First Page
-          setNavDirection('jump');
-          setBookIndex(0);
-          setTargetPageIndex(0);
+        if (row) {
+          const foundBookIndex = books.findIndex((b) => b.book_id === row.book_id);
+
+          if (foundBookIndex !== -1) {
+            setNavDirection('jump');
+            setBookIndex(foundBookIndex);
+            setTargetPageIndex(row.page_index);
+            return;
+          }
         }
-      } catch (error) {
-        console.warn('Failed to read saved progress from SQLite, falling back to page 0:', error);
+
+        // Fallback: Default to First Book (Genesis), First Page
         setNavDirection('jump');
         setBookIndex(0);
         setTargetPageIndex(0);
+      } catch (error) {
+        console.warn('Failed to restore progress:', error);
+        setNavDirection('jump');
+        setBookIndex(0);
+        setTargetPageIndex(0);
+      } finally {
+        // 👈 Signal that restored state is ready!
+        setIsRestoring(false);
       }
     }
 
-    restorePosition();
+    restoreSavedProgress();
   }, [db]);
 
   const initialIndex = useMemo(() => {
@@ -349,8 +370,8 @@ export function AutoPaginatedReader() {
             <Text style={styles.chapterTitle}>
               {`${bookName} - ምዕራፍ ${item.chapterNumber}`}
             </Text>
-            <Text style={styles.pageText}>{item.text}</Text> 
-            <Text style={[styles.pageFooter,{position:"absolute",bottom:100,left:"20%"}]}>
+            <Text style={styles.pageText}>{item.text}</Text>
+            <Text style={[styles.pageFooter, { position: "absolute", bottom: 84, right: "20%" }]}>
               ምዕራፍ {item.chapterNumber} (
               {item.startVerse > 0
                 ? `ቁጥር ${item.startVerse}-${item.endVerse}`
@@ -368,7 +389,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F5',
-    position:"relative",
+    position: "relative",
   },
   loadingContainer: {
     flex: 1,
