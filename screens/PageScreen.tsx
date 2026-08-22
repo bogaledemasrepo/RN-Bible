@@ -1,22 +1,34 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  Dimensions,
-  TouchableOpacity,
-} from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+
+import { NavigationModal } from '../components/navigation-modal';
+import PageCurl from '../components/page';
+import { ProfessionalLoader } from '../components/ProfessionalLoader';
+import { books } from '../constants';
+import {
+  LINE_HEIGHT,
+  PageCurlHandle,
+  PageItem,
+  PaginatedBookResult,
+  ParsedVerse,
+  RawVerseRow,
+} from '../types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { FONT_SIZE, LINE_HEIGHT, PageCurlHandle, PageItem, PaginatedBookResult, ParsedVerse, RawVerseRow } from '../types';
-import { books } from '../constants';
-import PageCurl from '../components/page';
-import { NavigationModal } from '../components/navigation-modal';
-import { ProfessionalLoader } from '../components/ProfessionalLoader';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ==========================================
 // Helper: Paginate Full Book with Clean Chapter Breaks & Verse Bounds
@@ -29,7 +41,6 @@ function paginateBookText(
   const allPages: PageItem[] = [];
   const chapterStartIndices: Record<number, number> = {};
 
-  // Space reserved for headers & footers (paddingTop + paddingBottom + header offset)
   const availableHeight = containerHeight - 145;
   const maxLinesPerPage = Math.floor(availableHeight / lineHeight);
 
@@ -54,14 +65,12 @@ function paginateBookText(
 
     for (const verse of verses) {
       const formattedVerse = `${verse.verseNum}. ${verse.text.trim()}`;
-      // Estimate lines required based on character length (~42 chars per line)
       const estimatedLines = Math.ceil(formattedVerse.length / 42) + 1;
 
       if (
         currentLineCount + estimatedLines > maxLinesPerPage &&
         currentPageVerses.length > 0
       ) {
-        // Push current page payload
         chapterTempPages.push({
           text: currentPageVerses
             .map((v) => `${v.verseNum}. ${v.text.trim()}`)
@@ -78,7 +87,6 @@ function paginateBookText(
       }
     }
 
-    // Flush any remaining verses for the chapter
     if (currentPageVerses.length > 0) {
       chapterTempPages.push({
         text: currentPageVerses
@@ -89,7 +97,6 @@ function paginateBookText(
       });
     }
 
-    // Convert raw page buffers to metadata-enriched PageItem instances
     const totalChapterPages = chapterTempPages.length;
     chapterTempPages.forEach((page, idx) => {
       allPages.push({
@@ -125,7 +132,9 @@ export function AutoPaginatedReader() {
   const [loading, setLoading] = useState<boolean>(true);
   const [isRestoring, setIsRestoring] = useState<boolean>(true);
   const [targetPageIndex, setTargetPageIndex] = useState<number | null>(null);
-  const [navDirection, setNavDirection] = useState<'next' | 'prev' | 'jump'>('jump');
+  const [navDirection, setNavDirection] = useState<'next' | 'prev' | 'jump'>(
+    'jump'
+  );
   const [navModalVisible, setNavModalVisible] = useState<boolean>(false);
   const [pendingChapterJump, setPendingChapterJump] = useState<number | null>(
     null
@@ -151,7 +160,6 @@ export function AutoPaginatedReader() {
         if (rows && rows.length > 0) {
           setBookName(rows[0].name_am || activeBookMeta.name_am);
 
-          // Group raw database records into structured chapter objects
           const chaptersData: Record<number, ParsedVerse[]> = {};
           for (const row of rows) {
             if (!chaptersData[row.chapter_number]) {
@@ -163,7 +171,6 @@ export function AutoPaginatedReader() {
             });
           }
 
-          // Compute pagination layout with chapter page breaks
           const result = paginateBookText(
             chaptersData,
             SCREEN_HEIGHT,
@@ -180,31 +187,40 @@ export function AutoPaginatedReader() {
     [db, activeBookMeta.name_am]
   );
 
-  // Load book whenever active book selection changes
+  // Load book whenever active book selection changes (asynchronously deferred)
   useEffect(() => {
-    loadAndPaginateBook(activeBookMeta.book_id);
+    let isMounted = true;
+
+    Promise.resolve().then(() => {
+      if (isMounted) {
+        loadAndPaginateBook(activeBookMeta.book_id);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
   }, [activeBookMeta.book_id, loadAndPaginateBook]);
 
   // Handle selection from NavigationModal
   const handleJumpToTarget = useCallback(
     (targetBookIndex: number, targetChapterNumber: number) => {
-      setNavDirection('jump'); // 👈 Set direction state
+      setNavDirection('jump');
 
       if (targetBookIndex === bookIndex) {
-        // Same book: Jump immediately to calculated index
         if (
           paginatedBook?.chapterStartIndices[targetChapterNumber] !== undefined
         ) {
-          const pageIdx = paginatedBook.chapterStartIndices[targetChapterNumber];
+          const pageIdx =
+            paginatedBook.chapterStartIndices[targetChapterNumber];
           setTargetPageIndex(pageIdx);
           curlRef.current?.jumpTo?.(pageIdx);
         }
       } else {
-        // Different book: Queue target chapter jump and trigger book load
         setPendingChapterJump(targetChapterNumber);
         setBookIndex(targetBookIndex);
       }
-      setNavModalVisible(false); // Close modal
+      setNavModalVisible(false);
     },
     [bookIndex, paginatedBook]
   );
@@ -212,20 +228,26 @@ export function AutoPaginatedReader() {
   // Auto-jump after new book completes loading
   useEffect(() => {
     if (!loading && paginatedBook && pendingChapterJump !== null) {
-      const targetPageIndex =
+      const pageIdx =
         paginatedBook.chapterStartIndices[pendingChapterJump] ?? 0;
-      setTimeout(() => {
-        curlRef.current?.jumpTo?.(targetPageIndex);
+      const timer = setTimeout(() => {
+        curlRef.current?.jumpTo?.(pageIdx);
         setPendingChapterJump(null);
       }, 100);
+
+      return () => clearTimeout(timer);
     }
   }, [loading, paginatedBook, pendingChapterJump]);
 
-  // 3. Save Updated Position to SQLite on Page Change
+  // Save Updated Position to SQLite on Page Change
   const handlePageChange = useCallback(
     async (globalIdx: number) => {
-      // 👈 Guard: Do not overwrite SQLite while initial restoration is in progress
-      if (isRestoring || loading || !paginatedBook || !paginatedBook.allPages[globalIdx]) {
+      if (
+        isRestoring ||
+        loading ||
+        !paginatedBook ||
+        !paginatedBook.allPages[globalIdx]
+      ) {
         return;
       }
 
@@ -240,11 +262,7 @@ export function AutoPaginatedReader() {
            chapter = excluded.chapter,
            page_index = excluded.page_index,
            updated_at = CURRENT_TIMESTAMP;`,
-          [
-            activeBookMeta.book_id,
-            currentPage.chapterNumber,
-            globalIdx,
-          ]
+          [activeBookMeta.book_id, currentPage.chapterNumber, globalIdx]
         );
       } catch (error) {
         console.warn('Failed to save progress:', error);
@@ -253,8 +271,6 @@ export function AutoPaginatedReader() {
     [db, paginatedBook, activeBookMeta.book_id, isRestoring, loading]
   );
 
-
-  // User swipes to next book
   const handleReachEnd = useCallback(() => {
     if (bookIndex < books.length - 1) {
       setNavDirection('next');
@@ -263,7 +279,6 @@ export function AutoPaginatedReader() {
     }
   }, [bookIndex]);
 
-  // User swipes to previous book
   const handleReachStart = useCallback(() => {
     if (bookIndex > 0) {
       setNavDirection('prev');
@@ -279,10 +294,14 @@ export function AutoPaginatedReader() {
           book_id: number;
           chapter: number;
           page_index: number;
-        }>(`SELECT book_id, chapter, page_index FROM user_progress WHERE id = 1;`);
+        }>(
+          `SELECT book_id, chapter, page_index FROM user_progress WHERE id = 1;`
+        );
 
         if (row) {
-          const foundBookIndex = books.findIndex((b) => b.book_id === row.book_id);
+          const foundBookIndex = books.findIndex(
+            (b) => b.book_id === row.book_id
+          );
 
           if (foundBookIndex !== -1) {
             setNavDirection('jump');
@@ -292,7 +311,6 @@ export function AutoPaginatedReader() {
           }
         }
 
-        // Fallback: Default to First Book (Genesis), First Page
         setNavDirection('jump');
         setBookIndex(0);
         setTargetPageIndex(0);
@@ -302,7 +320,6 @@ export function AutoPaginatedReader() {
         setBookIndex(0);
         setTargetPageIndex(0);
       } finally {
-        // 👈 Signal that restored state is ready!
         setIsRestoring(false);
       }
     }
@@ -313,17 +330,17 @@ export function AutoPaginatedReader() {
   const initialIndex = useMemo(() => {
     if (!paginatedBook || paginatedBook.allPages.length === 0) return 0;
 
-    // 1. Swiping backward across books
     if (navDirection === 'prev') {
       return paginatedBook.allPages.length - 1;
     }
 
-    // 2. Jumping to saved position or chapter navigation
     if (navDirection === 'jump' && targetPageIndex !== null) {
-      return Math.max(0, Math.min(targetPageIndex, paginatedBook.allPages.length - 1));
+      return Math.max(
+        0,
+        Math.min(targetPageIndex, paginatedBook.allPages.length - 1)
+      );
     }
 
-    // 3. Swiping forward across books ('next')
     return 0;
   }, [paginatedBook, navDirection, targetPageIndex]);
 
@@ -337,7 +354,6 @@ export function AutoPaginatedReader() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {/* Interactive Navigation Header */}
       <View style={styles.headerBar}>
         <TouchableOpacity
           style={styles.headerButton}
@@ -348,20 +364,18 @@ export function AutoPaginatedReader() {
         </TouchableOpacity>
       </View>
 
-      {/* Navigation Modal Picker */}
       <NavigationModal
         visible={navModalVisible}
         onClose={() => setNavModalVisible(false)}
-        onSelectTarget={handleJumpToTarget} // 👈 1. Chapter/Book picker handler
+        onSelectTarget={handleJumpToTarget}
       />
 
-      {/* Skia 3D Page Reader */}
       <PageCurl
         key={`book-${activeBookMeta.book_id}-${navDirection}`}
         ref={curlRef}
         data={paginatedBook.allPages}
         initialIndex={initialIndex}
-        onPageChange={handlePageChange} // 👈 HERE: Saves page number on every turn
+        onPageChange={handlePageChange}
         onReachEnd={handleReachEnd}
         onReachStart={handleReachStart}
         gestureEnabled={true}
@@ -371,7 +385,12 @@ export function AutoPaginatedReader() {
               {`${bookName} - ምዕራፍ ${item.chapterNumber}`}
             </Text>
             <Text style={styles.pageText}>{item.text}</Text>
-            <Text style={[styles.pageFooter, { position: "absolute", bottom: 84, right: "20%" }]}>
+            <Text
+              style={[
+                styles.pageFooter,
+                { position: 'absolute', bottom: 84, right: '20%' },
+              ]}
+            >
               ምዕራፍ {item.chapterNumber} (
               {item.startVerse > 0
                 ? `ቁጥር ${item.startVerse}-${item.endVerse}`
@@ -389,18 +408,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAF8F5',
-    position: "relative",
+    position: 'relative',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FAF8F5',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#64748b',
   },
   headerBar: {
     height: 44,
@@ -423,13 +437,13 @@ const styles = StyleSheet.create({
     color: '#8B0000',
   },
   pageCard: {
-    width: SCREEN_WIDTH,
+    width: Dimensions.get('window').width,
     height: SCREEN_HEIGHT - 44,
     backgroundColor: '#FAF8F5',
     paddingHorizontal: 24,
-    paddingTop: 16,     // 👈 Slightly reduced top padding
-    paddingBottom: 20,  // 👈 Explicit bottom padding ensures footer stays inside bounds
-    justifyContent: 'space-between', // 👈 Keeps header, content, and footer anchored properly
+    paddingTop: 16,
+    paddingBottom: 20,
+    justifyContent: 'space-between',
   },
   chapterTitle: {
     fontSize: 20,
@@ -441,7 +455,7 @@ const styles = StyleSheet.create({
   pageText: {
     flex: 1,
     flexShrink: 1,
-    fontSize: FONT_SIZE,
+    fontSize: 18,
     lineHeight: LINE_HEIGHT,
     color: '#1e293b',
   },

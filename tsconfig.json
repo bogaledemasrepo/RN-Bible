@@ -4,5 +4,6 @@
     "strict": true,
     "jsx": "react-native",
     "moduleResolution": "bundler"
-  }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "types/**/*.d.ts"]
 }

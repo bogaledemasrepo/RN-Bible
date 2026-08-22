@@ -4,7 +4,7 @@
 import { Dimensions } from 'react-native';
 
 // ==========================================
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const FONT_SIZE = 17;
 const LINE_HEIGHT = 28;

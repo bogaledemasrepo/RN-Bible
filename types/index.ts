@@ -40,11 +40,11 @@ export type RootDrawerParamList = {
 
 export type ItemProps = {
   children: React.ReactNode;
-  setImages: (img: any) => void;
+  setImages: (img: string) => void;
 };
 
 export type RenderPageProps = {
-  item: any;
+  item: PageItem;
   index: number;
 };
 
@@ -54,7 +54,6 @@ export interface PageCurlHandle {
   prev: () => void;
   jumpTo: (targetIndex: number) => void;
 }
-
 
 export const FONT_SIZE = 16;
 export const LINE_HEIGHT = 24;

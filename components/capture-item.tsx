@@ -1,17 +1,18 @@
-// capture-item.tsx
+import { makeImageFromView, SkImage } from '@shopify/react-native-skia';
 import React, { useRef } from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
-import { makeImageFromView, SkImage } from '@shopify/react-native-skia';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+interface CaptureItemProps {
+  children: React.ReactNode;
+  onCaptured: (img: SkImage) => void;
+}
 
 export default function CaptureItem({
   children,
   onCaptured,
-}: {
-  children: React.ReactNode;
-  onCaptured: (img: SkImage) => void;
-}) {
+}: CaptureItemProps) {
   const viewRef = useRef<View>(null);
   const isCaptured = useRef(false);
 
@@ -23,7 +24,10 @@ export default function CaptureItem({
       requestAnimationFrame(async () => {
         try {
           if (viewRef.current) {
-            const image = await makeImageFromView(viewRef as any);
+            // Ref object safely typed for Skia's makeImageFromView
+            const image = await makeImageFromView(
+              viewRef as unknown as React.RefObject<View>
+            );
             if (image) {
               onCaptured(image);
             }
@@ -40,7 +44,7 @@ export default function CaptureItem({
       ref={viewRef}
       onLayout={handleLayout}
       collapsable={false}
-      renderToHardwareTextureAndroid={true} // Prevents sub-pixel rendering jitter on Android
+      renderToHardwareTextureAndroid={true}
       style={styles.captureContainer}
     >
       {children}

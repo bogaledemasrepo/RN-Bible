@@ -21,7 +21,13 @@ type Props = {
 };
 
 // Ethiopian Orthodox Style Cross SVG
-function CrossIcon({ size = 48, color = '#8B0000' }: { size?: number; color?: string }) {
+function CrossIcon({
+  size = 48,
+  color = '#8B0000',
+}: {
+  size?: number;
+  color?: string;
+}) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
@@ -37,7 +43,10 @@ function CrossIcon({ size = 48, color = '#8B0000' }: { size?: number; color?: st
   );
 }
 
-export function ProfessionalLoader({ bookName, message = 'በመጫን ላይ...' }: Props) {
+export function ProfessionalLoader({
+  bookName,
+  message = 'በመጫን ላይ...',
+}: Props) {
   // Shared values for smooth Reanimated 3 animations
   const rotation = useSharedValue(0);
   const pulse = useSharedValue(1);
@@ -85,10 +94,11 @@ export function ProfessionalLoader({ bookName, message = 'በመጫን ላይ...
         </View>
 
         {/* Dynamic Context Label */}
-        <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-          {bookName ? (
-            <Text style={styles.bookTitle}>{bookName}</Text>
-          ) : null}
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          exiting={FadeOut.duration(200)}
+        >
+          {bookName ? <Text style={styles.bookTitle}>{bookName}</Text> : null}
           <Text style={styles.statusText}>{message}</Text>
         </Animated.View>
 

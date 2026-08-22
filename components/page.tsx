@@ -5,9 +5,8 @@ import React, {
   useImperativeHandle,
   useMemo,
   useState,
-  useRef,
-} from "react";
-import { Dimensions, StyleSheet, Text, View } from "react-native";
+} from 'react';
+import { Dimensions, StyleSheet, View } from 'react-native';
 import {
   Canvas,
   Fill,
@@ -15,24 +14,24 @@ import {
   Shader,
   Skia,
   SkImage,
-} from "@shopify/react-native-skia";
+} from '@shopify/react-native-skia';
 import {
   useDerivedValue,
   useSharedValue,
   withTiming,
   runOnJS,
   cancelAnimation,
-} from "react-native-reanimated";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
-import { PageCurlHandle, RenderPageProps } from "../types";
-import { pageCurlShader } from "../constants";
-import CaptureItem from "./capture-item";
+import { PageCurlHandle, PageItem, RenderPageProps } from '../types';
+import { pageCurlShader } from '../constants';
+import CaptureItem from './capture-item';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type Props = {
-  data?: any[];
+  data?: PageItem[];
   initialIndex?: number;
   onReachStart?: () => void;
   onPageChange?: (pageIdx: number) => Promise<void>;
@@ -62,7 +61,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   const currentIndex = useSharedValue(initialIndex);
   const img1Index = useSharedValue(initialIndex);
   const topFlag = useSharedValue(0);
-  const currentAnim = useSharedValue<"next" | "prev">("next");
+  const currentAnim = useSharedValue<'next' | 'prev'>('next');
   const startX = useSharedValue(0);
   const progress = useSharedValue(0);
   const isBoundarySwipe = useSharedValue(false);
@@ -74,7 +73,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     img1Index.value = initialIndex;
     setActiveJSIndex(initialIndex);
     progress.value = 0;
-  }, [data, initialIndex]);
+  }, [data, initialIndex, currentIndex, img1Index, progress]);
 
   // Helper function called whenever page index changes on JS thread
   const updateJSIndex = useCallback(
@@ -101,13 +100,10 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     [progress, topFlag]
   );
 
-
-
-
   const img1 = useDerivedValue(() => {
     const idx = img1Index.value;
 
-    if (currentAnim.value === "prev") {
+    if (currentAnim.value === 'prev') {
       const prevIdx = idx - 1;
       return viewImages[prevIdx] ?? viewImages[idx] ?? null;
     }
@@ -118,7 +114,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
   const img2 = useDerivedValue(() => {
     const idx = img1Index.value;
 
-    if (currentAnim.value === "prev") {
+    if (currentAnim.value === 'prev') {
       return viewImages[idx] ?? img1.value;
     }
 
@@ -126,14 +122,12 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     return viewImages[nextIdx] ?? img1.value;
   }, [viewImages, img1Index, currentAnim, img1]);
 
-
   const handleSetImage = useCallback(
     (img: SkImage, index: number) => {
       setViewImages((prev) => {
         const nextMap: Record<number, SkImage> = {};
         const minKeep = activeJSIndex - 2;
         const maxKeep = activeJSIndex + 2;
-
 
         Object.keys(prev).forEach((key) => {
           const k = Number(key);
@@ -182,7 +176,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
           return;
         }
 
-        currentAnim.value = "prev";
+        currentAnim.value = 'prev';
         img1Index.value = currentIndex.value;
         progress.value = 1;
       } else {
@@ -202,7 +196,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
           return;
         }
 
-        currentAnim.value = "next";
+        currentAnim.value = 'next';
         img1Index.value = currentIndex.value;
         progress.value = 0;
       }
@@ -211,7 +205,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     })
     .onChange((e) => {
       if (isBoundarySwipe.value) return; // Ignore drag if at edge!
-      if (currentAnim.value === "prev") {
+      if (currentAnim.value === 'prev') {
         const deltaX = e.x - startX.value;
         progress.value = Math.max(0, Math.min(1, 1 - deltaX / SCREEN_WIDTH));
       } else {
@@ -224,7 +218,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
       const deltaX = e.x - startX.value;
       const passedThreshold = Math.abs(deltaX) > SCREEN_WIDTH / 3;
 
-      if (currentAnim.value === "prev") {
+      if (currentAnim.value === 'prev') {
         if (passedThreshold) {
           // Swipe Succeeded: Animate progress to 0 (unpeel completely)
           progress.value = withTiming(0, { duration: 220 }, (finished) => {
@@ -240,7 +234,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
             if (finished) {
               // Reset progress after gesture finish state is committed
               progress.value = 0;
-              currentAnim.value = "next";
+              currentAnim.value = 'next';
             }
           });
         }
@@ -265,7 +259,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 
   const next = useCallback(() => {
     if (currentIndex.value >= dataLength - 1) return;
-    currentAnim.value = "next";
+    currentAnim.value = 'next';
     progress.value = withTiming(1, { duration: 300 }, (finished) => {
       if (finished) {
         currentIndex.value++;
@@ -274,11 +268,18 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         runOnJS(updateJSIndex)(currentIndex.value);
       }
     });
-  }, [currentIndex, dataLength, img1Index, progress, updateJSIndex]);
+  }, [
+    currentIndex,
+    currentAnim,
+    dataLength,
+    img1Index,
+    progress,
+    updateJSIndex,
+  ]);
 
   const prev = useCallback(() => {
     if (currentIndex.value <= 0) return;
-    currentAnim.value = "prev";
+    currentAnim.value = 'prev';
     progress.value = 1;
     progress.value = withTiming(0, { duration: 300 }, (finished) => {
       if (finished) {
@@ -287,7 +288,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         runOnJS(updateJSIndex)(currentIndex.value);
       }
     });
-  }, [currentIndex, img1Index, progress, updateJSIndex]);
+  }, [currentIndex, img1Index, currentAnim, progress, updateJSIndex]);
 
   const jumpTo = useCallback(
     (targetIndex: number) => {
@@ -300,7 +301,11 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     [currentIndex, dataLength, img1Index, progress, updateJSIndex]
   );
 
-  useImperativeHandle(ref, () => ({ next, prev, jumpTo }), [next, prev, jumpTo]);
+  useImperativeHandle(ref, () => ({ next, prev, jumpTo }), [
+    next,
+    prev,
+    jumpTo,
+  ]);
 
   // In page.tsx
 
@@ -334,7 +339,15 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
     // if (onPageChange) {
     //   onPageChange(initialIndex); // 👈 3. Call on initial mount/book change
     // }
-  }, [data, initialIndex, currentIndex, img1Index, progress, isBoundarySwipe, onPageChange]);
+  }, [
+    data,
+    initialIndex,
+    currentIndex,
+    img1Index,
+    progress,
+    isBoundarySwipe,
+    onPageChange,
+  ]);
 
   return (
     <GestureDetector gesture={gesture}>
@@ -358,7 +371,7 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
         </View>
 
         <Canvas style={styles.canvas}>
-          <Fill color={"#FAF8F5"}>
+          <Fill color={'#FAF8F5'}>
             <Shader source={shaderEffect} uniforms={uniforms}>
               <ImageShader
                 image={img1}
@@ -383,7 +396,13 @@ const PageCurl = forwardRef<PageCurlHandle, Props>(function PageCurl(
 export default PageCurl;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FAF8F5" },
-  captureGroup: { position: "absolute", top: 0, left: 0, opacity: 0, zIndex: -1 },
-  canvas: { flex: 1, width: "100%", height: "100%" },
+  container: { flex: 1, backgroundColor: '#FAF8F5' },
+  captureGroup: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    opacity: 0,
+    zIndex: -1,
+  },
+  canvas: { flex: 1, width: '100%', height: '100%' },
 });

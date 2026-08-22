@@ -3,9 +3,11 @@ import {
   useSQLiteContext,
   type SQLiteDatabase,
 } from 'expo-sqlite';
-import { useEffect, useState } from 'react';
-import { View, Text } from 'react-native';
+import { useEffect } from 'react';
+import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+// ✅ Use ES6 static import:
+import dbAsset from '../assets/bible.db';
 
 export default function Sqlite({ children }: { children: React.ReactNode }) {
   return (
@@ -13,7 +15,7 @@ export default function Sqlite({ children }: { children: React.ReactNode }) {
       <SQLiteProvider
         databaseName="bible.db"
         assetSource={{
-          assetId: require('../assets/bible.db'),
+          assetId: dbAsset,
           forceOverwrite: true,
         }}
         onInit={migrateDbIfNeeded}
@@ -27,16 +29,16 @@ export default function Sqlite({ children }: { children: React.ReactNode }) {
 
 export function Header() {
   const db = useSQLiteContext();
-  const [version, setVersion] = useState('');
   useEffect(() => {
     async function setup() {
       const result = await db.getFirstAsync<{ 'sqlite_version()': string }>(
         'SELECT sqlite_version()'
       );
-      setVersion(result?.['sqlite_version()'] || '');
+      console.log(result);
     }
+
     setup();
-  }, []);
+  }, [db]);
   return <View></View>;
 }
 
